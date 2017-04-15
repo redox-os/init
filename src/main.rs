@@ -4,7 +4,7 @@ extern crate syscall;
 
 use std::env;
 use std::fs::{File, OpenOptions, read_dir};
-use std::io::{BufRead, BufReader, Error, Result};
+use std::io::{Read, Error, Result};
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
@@ -22,11 +22,10 @@ fn switch_stdio(stdio: &str) -> Result<()> {
 }
 
 pub fn run(file: &Path) -> Result<()> {
-    let file = File::open(file)?;
-    let reader = BufReader::new(file);
+    let mut data = String::new();
+    File::open(file)?.read_to_string(&mut data)?;
 
-    for line_result in reader.lines() {
-        let line = line_result?;
+    for line in data.lines() {
         let line = line.trim();
         if ! line.is_empty() && ! line.starts_with('#') {
             let mut args = line.split(' ');
@@ -69,30 +68,28 @@ pub fn run(file: &Path) -> Result<()> {
                         println!("init: failed to run: no argument");
                     },
                     "run.d" => if let Some(new_dir) = args.next() {
+                        let mut entries = vec![];
                         match read_dir(new_dir) {
-                            Ok(list) => {
-                                let mut entries = vec![];
-                                for entry_res in list {
-                                    match entry_res {
-                                        Ok(entry) => {
-                                            entries.push(entry.path());
-                                        },
-                                        Err(err) => {
-                                            println!("init: failed to run.d: '{}': {}", new_dir, err);
-                                        }
-                                    }
-                                }
-
-                                entries.sort();
-
-                                for entry in entries {
-                                    if let Err(err) = run(&entry) {
-                                        println!("init: failed to run '{}': {}", entry.display(), err);
+                            Ok(list) => for entry_res in list {
+                                match entry_res {
+                                    Ok(entry) => {
+                                        entries.push(entry.path());
+                                    },
+                                    Err(err) => {
+                                        println!("init: failed to run.d: '{}': {}", new_dir, err);
                                     }
                                 }
                             },
                             Err(err) => {
                                 println!("init: failed to run.d: '{}': {}", new_dir, err);
+                            }
+                        }
+
+                        entries.sort();
+
+                        for entry in entries {
+                            if let Err(err) = run(&entry) {
+                                println!("init: failed to run '{}': {}", entry.display(), err);
                             }
                         }
                     } else {
