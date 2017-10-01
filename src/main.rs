@@ -35,11 +35,16 @@ pub fn run(file: &Path) -> Result<()> {
     for line in data.lines() {
         let line = line.trim();
         if ! line.is_empty() && ! line.starts_with('#') {
-            let mut args = line.split(' ');
+            let mut args = line.split(' ').map(|arg| if arg.starts_with('$') {
+                env::var(&arg[1..]).unwrap_or(String::new())
+            } else {
+                arg.to_string()
+            });
+
             if let Some(cmd) = args.next() {
-                match cmd {
+                match cmd.as_str() {
                     "cd" => if let Some(dir) = args.next() {
-                        if let Err(err) = env::set_current_dir(dir) {
+                        if let Err(err) = env::set_current_dir(&dir) {
                             println!("init: failed to cd to '{}': {}", dir, err);
                         }
                     } else {
@@ -68,7 +73,7 @@ pub fn run(file: &Path) -> Result<()> {
                         println!("init: failed to export: no argument");
                     },
                     "run" => if let Some(new_file) = args.next() {
-                        if let Err(err) = run(&Path::new(new_file)) {
+                        if let Err(err) = run(&Path::new(&new_file)) {
                             println!("init: failed to run '{}': {}", new_file, err);
                         }
                     } else {
@@ -76,7 +81,7 @@ pub fn run(file: &Path) -> Result<()> {
                     },
                     "run.d" => if let Some(new_dir) = args.next() {
                         let mut entries = vec![];
-                        match read_dir(new_dir) {
+                        match read_dir(&new_dir) {
                             Ok(list) => for entry_res in list {
                                 match entry_res {
                                     Ok(entry) => {
