@@ -141,6 +141,8 @@ pub fn main() {
         println!("init: failed to run initfs:etc/init.rc: {}", err);
     }
 
+    syscall::setrens(0, 0).expect("init: failed to enter null namespace");
+
     loop {
         let mut status = 0;
         syscall::waitpid(0, &mut status, 0).unwrap();
