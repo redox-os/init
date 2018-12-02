@@ -1,0 +1,31 @@
+image: "rust:latest"
+
+stages:
+    - build
+    - test
+
+before_script:
+    - rustup toolchain add nightly
+    - rustup target add x86_64-unknown-redox --toolchain nightly
+    - rustup show
+
+cache:
+    paths:
+        - target/
+
+build:linux:cargo:
+    stage: build
+    script:
+        - cargo +nightly build --verbose
+
+build:redox:cargo:
+    stage: build
+    script:
+        - cargo +nightly build --verbose --target x86_64-unknown-redox
+
+test:linux:cargo:
+    stage: test
+    dependencies:
+        - build:linux:cargo
+    script:
+        - cargo +nightly test --verbose -- --test-threads=1
