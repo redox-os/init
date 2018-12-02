@@ -1,6 +1,17 @@
-#![deny(warnings)]
+//#![deny(warnings)]
 
+extern crate failure;
+extern crate generational_arena;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate serde_derive;
+extern crate simple_logger;
 extern crate syscall;
+extern crate toml;
+
+mod dependency;
+mod service;
 
 use std::env;
 use std::fs::{File, read_dir};
@@ -8,7 +19,11 @@ use std::io::{Read, Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::Path;
 use std::process::Command;
+
 use syscall::flag::{O_RDONLY, O_WRONLY};
+
+use dependency::*;
+use service::services;
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -137,12 +152,34 @@ pub fn run(file: &Path) -> Result<()> {
 }
 
 pub fn main() {
+    simple_logger::init()
+        .unwrap_or_else(|err| {
+            println!("init: failed to start logger: {}", err);
+        });
+    
+    let services = services("initfs:/etc/init.d")
+        .unwrap_or_else(|err| {
+            warn!("{}", err);
+            vec![]
+        });
+    
+    let services = build_graph(services);
+    let resolved = resolve_linear(&services);
+    
+    env::set_var("PATH", "/bin");
+    
+    for index in resolved.iter() {
+        let node = services.get(*index).unwrap();
+        node.service.methods.get("start").unwrap().wait();
+    }
+    
+    // This file has had the services removed now
     if let Err(err) = run(&Path::new("initfs:etc/init.rc")) {
         println!("init: failed to run initfs:etc/init.rc: {}", err);
     }
-
+    
     syscall::setrens(0, 0).expect("init: failed to enter null namespace");
-
+    
     loop {
         let mut status = 0;
         syscall::waitpid(0, &mut status, 0).unwrap();
