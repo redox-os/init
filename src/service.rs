@@ -54,6 +54,7 @@ pub struct Service {
     pub name: String,
     
     pub dependencies: Option<Vec<String>>,
+    pub provides: Option<Vec<String>>,
     pub methods: HashMap<String, Method>
 }
 
@@ -89,11 +90,19 @@ pub fn services(dir: impl AsRef<Path>) -> Result<Vec<Service>, Error> {
     let mut services = vec![];
     
     for file in read_dir(dir)? {
-        let file_path = file?.path();
+        let file_path = match file {
+            Ok(file) => file,
+            Err(err) => {
+                error!("{}", err);
+                continue
+            }
+        }.path();
+        
         let is_toml = match file_path.extension() {
             Some(ext) => ext == OsStr::new("toml"),
             None => false
         };
+        
         if is_toml {
             match Service::from_file(file_path) {
                 Ok(service) => services.push(service),

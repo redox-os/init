@@ -22,7 +22,7 @@ use std::process::Command;
 
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
-use dependency::*;
+use dependency::DepGraph;
 use service::services;
 
 fn switch_stdio(stdio: &str) -> Result<()> {
@@ -163,20 +163,32 @@ pub fn main() {
             vec![]
         });
     
-    let services = build_graph(services);
-    let resolved = resolve_linear(&services);
+    let services = DepGraph::from_services(services)
+        .on_provided("file:", || {
+            info!("setting cwd to file:");
+            if let Err(err) = env::set_current_dir("file:") {
+                error!("failed to set cwd: {}", err);
+            }
+            
+            info!("setting PATH=file:/bin");
+            env::set_var("PATH", "file:/bin");
+            
+            // This file has had the services removed now
+            if let Err(err) = run(&Path::new("initfs:etc/init.rc")) {
+                error!("failed to run initfs:etc/init.rc: {}", err);
+            }
+        })
+        .on_provided("display:", || {
+            switch_stdio("display:1")
+                .unwrap_or_else(|err| {
+                    warn!("{}", err);
+                });
+        });
     
-    env::set_var("PATH", "/bin");
+    info!("setting PATH=initfs:/bin");
+    env::set_var("PATH", "initfs:/bin");
     
-    for index in resolved.iter() {
-        let node = services.get(*index).unwrap();
-        node.service.methods.get("start").unwrap().wait();
-    }
-    
-    // This file has had the services removed now
-    if let Err(err) = run(&Path::new("initfs:etc/init.rc")) {
-        println!("init: failed to run initfs:etc/init.rc: {}", err);
-    }
+    services.start().expect("failed to start services");
     
     syscall::setrens(0, 0).expect("init: failed to enter null namespace");
     
