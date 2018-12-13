@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::default::Default;
 use std::env;
 use std::ffi::OsStr;
 use std::fs::{File, read_dir};
@@ -8,6 +9,17 @@ use std::process::Command;
 
 use failure::Error;
 use toml;
+
+#[derive(Debug)]
+pub enum State {
+    Offline,
+    Online,
+    Failed
+}
+
+impl Default for State {
+    fn default() -> State { State::Offline }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Method {
@@ -55,7 +67,10 @@ pub struct Service {
     
     pub dependencies: Option<Vec<String>>,
     pub provides: Option<Vec<String>>,
-    pub methods: HashMap<String, Method>
+    pub methods: HashMap<String, Method>,
+    
+    #[serde(skip)]
+    pub state: State
 }
 
 impl Service {
