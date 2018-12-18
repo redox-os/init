@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use generational_arena::{Arena, Index};
 
+/// A container struct that allows for a
+/// nice abstraction of a dependency graph
 struct Node<T> {
     inner: T,
     dependencies: Vec<Index>
@@ -29,32 +31,38 @@ impl<T> Node<T> {
 }
 
 /// A sorta thin wrapper over a Generational arena that includes
-/// dependency resolution and traversal methods
+/// dependency relationships between nodes and some solvers
 pub struct DepGraph<T> {
     graph: Arena<Node<T>>
 }
 
 impl<T> DepGraph<T> {
+    /// Wrapper over `generational_arena::Arena::with_capacity`
     pub fn with_capacity(n: usize) -> DepGraph<T> {
         DepGraph {
             graph: Arena::with_capacity(n)
         }
     }
     
+    /// Add an element to the graph, returning an index to the element
     pub fn insert(&mut self, inner: T) -> Index {
         self.graph.insert(Node::new(inner))
     }
     
+    /// Get an immutable borrow of an element by index if it exists
     pub fn get(&self, indx: Index) -> Option<&T> {
         self.graph.get(indx)
             .map(|node| node.get_inner() )
     }
     
+    /// Get a mutable borrow of an element by index, if it exists
     pub fn get_mut(&mut self, indx: Index) -> Option<&mut T> {
         self.graph.get_mut(indx)
             .map(|node| node.get_mut_inner() )
     }
     
+    /// Remove an element from the graph by index, returning
+    /// the value if it exists
     pub fn remove(&mut self, indx: Index) -> Option<T> {
         self.graph.remove(indx)
             .map(|node| node.unwrap() )

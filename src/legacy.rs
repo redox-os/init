@@ -67,7 +67,11 @@ pub fn run(file: &Path) -> Result<()> {
                             Ok(list) => for entry_res in list {
                                 match entry_res {
                                     Ok(entry) => {
-                                        entries.push(entry.path());
+                                        let path = entry.path();
+                                        // Ignore .toml service files
+                                        if let None = path.extension() {
+                                            entries.push(path);
+                                        }
                                     },
                                     Err(err) => {
                                         println!("init: failed to run.d: '{}': {}", new_dir, err);

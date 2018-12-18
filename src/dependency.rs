@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
-use failure::{Error, err_msg};
 use generational_arena::Index;
 
 use dependency_graph::DepGraph;
 use service::{Service, State};
 
-pub fn graph_from_services(mut services: Vec<Service>) -> DepGraph<Service> {
+pub fn graph_from_services(services: Vec<Service>) -> DepGraph<Service> {
     let mut graph = DepGraph::with_capacity(services.len());
-    
+    graph_add_services(&mut graph, services);
+    graph
+}
+
+pub fn graph_add_services(graph: &mut DepGraph<Service>, mut services: Vec<Service>) {
     let services: HashMap<String, Index> = services.drain(..)
         .map(|service| (service.name.clone(), graph.insert(service)) )
         .collect();
@@ -31,10 +34,9 @@ pub fn graph_from_services(mut services: Vec<Service>) -> DepGraph<Service> {
             }
         }
     }
-    graph
 }
 
-pub fn start_services(mut graph: DepGraph<Service>, provide_hooks: HashMap<String, impl Fn()>) -> Result<(), Error> {
+pub fn start_services(mut graph: DepGraph<Service>, provide_hooks: HashMap<String, impl Fn()>) {
     let resolved = graph.linear_resolve();
     
     for index in resolved.iter() {
@@ -43,10 +45,12 @@ pub fn start_services(mut graph: DepGraph<Service>, provide_hooks: HashMap<Strin
             .expect("resolved service index did not exist");
         
         if let Some(method) = service.methods.get("start") {
-            method.wait();
+            if !service.state.is_running() {
+                method.wait();
+            }
         } else {
-            let msg = format!("service {} missing 'start' method", service.name);
-            return Err(err_msg(msg));
+            error!("service {} missing 'start' method", service.name);
+            service.state = State::Failed;
         }
         
         //TODO: Better solution to this
@@ -61,5 +65,4 @@ pub fn start_services(mut graph: DepGraph<Service>, provide_hooks: HashMap<Strin
             }
         }
     }
-    Ok(())
 }

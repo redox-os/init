@@ -17,6 +17,16 @@ pub enum State {
     Failed
 }
 
+impl State {
+    pub fn is_running(&self) -> bool {
+        match self {
+            State::Offline => false,
+            State::Online => true,
+            State::Failed => false
+        }
+    }
+}
+
 impl Default for State {
     fn default() -> State { State::Offline }
 }
@@ -49,6 +59,7 @@ impl Method {
     pub fn wait(&self) {
         let mut cmd = Command::new(&self.cmd[0]);
         cmd.args(self.cmd[1..].iter());
+        info!("waiting on service method start: {:?}", cmd);
         
         match cmd.spawn() {
             Ok(mut child) => match child.wait() {
