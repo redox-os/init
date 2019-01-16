@@ -31,17 +31,28 @@ impl<T> Node<T> {
 }
 
 /// A sorta thin wrapper over a Generational arena that includes
-/// dependency relationships between nodes and some solvers
+/// dependency relationships between nodes and some solvers.
 pub struct DepGraph<T> {
     graph: Arena<Node<T>>
 }
 
 impl<T> DepGraph<T> {
-    /// Wrapper over `generational_arena::Arena::with_capacity`
-    pub fn with_capacity(n: usize) -> DepGraph<T> {
+    pub fn new() -> DepGraph<T> {
         DepGraph {
-            graph: Arena::with_capacity(n)
+            graph: Arena::new()
         }
+    }
+    
+    /// Wrapper over `generational_arena::Arena::with_capacity`
+    pub fn with_capacity(capacity: usize) -> DepGraph<T> {
+        DepGraph {
+            graph: Arena::with_capacity(capacity)
+        }
+    }
+    
+    /// Wrapper over `generaltional_arena::Arena::reserve`
+    pub fn reserve(&mut self, additional_capacity: usize) {
+        self.graph.reserve(additional_capacity);
     }
     
     /// Add an element to the graph, returning an index to the element
@@ -70,29 +81,36 @@ impl<T> DepGraph<T> {
     
     /// Add a dependent relationship between a parent and a child
     ///
-    /// Returns Err() if either of the indecies do not exist in the graph
-    pub fn dependency(&mut self, parent: Index, child: Index) -> Result<(), ()> {
-        if self.graph.contains(parent) && self.graph.contains(child) {
-            self.graph.get_mut(parent)
+    /// Returns Err(()) if either of the indecies do not exist in the graph
+    pub fn dependency(&mut self, dependent: Index, dependency: Index) -> Result<(), ()> {
+        if self.graph.contains(dependent) && self.graph.contains(dependency) {
+            self.graph.get_mut(dependent)
                 .unwrap() // Cannot be None
-                .dependencies.push(child);
+                .dependencies.push(dependency);
             Ok(())
         } else {
             Err(())
         }
     }
     
+    /// This function provides a very naive and straightforward algorithm to resolve
+    /// a dependency graph. The Vector that is returned is a list that should be a solution
+    /// to the graph.
+    ///
+    /// # Note
+    /// This function currently does NOT resolve dependency cycles or other complicated things.
+    /// Be careful, you'll likely end up with an infinite loop.
     pub fn linear_resolve(&self) -> Vec<Index> {
         let arena_len = self.graph.len();
         let mut resolved = Vec::with_capacity(arena_len);
         let mut seen = HashSet::with_capacity(arena_len);
         
         while resolved.len() < arena_len {
-            for (index, service_node) in self.graph.iter() {
+            for (index, node) in self.graph.iter() {
                 // formatting?
                 if !seen.contains(&index) &&
-                        (service_node.dependencies.is_empty() ||
-                        service_node.dependencies.iter().all(|index| resolved.contains(index)))
+                        (node.dependencies.is_empty() ||
+                        node.dependencies.iter().all(|index| resolved.contains(index)))
                 {
                     seen.insert(index);
                     resolved.push(index);
@@ -101,4 +119,10 @@ impl<T> DepGraph<T> {
         }
         resolved
     }
+    /*
+    pub fn grouped_resolve(&self) -> Vec<Vec<Index>> {
+        let mut groups = vec![vec![]];
+        
+        for (index, node)
+    }*/
 }

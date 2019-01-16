@@ -10,12 +10,11 @@ extern crate simple_logger;
 extern crate syscall;
 extern crate toml;
 
-mod dependency;
-mod dependency_graph;
+mod dep_graph;
 mod legacy;
 mod service;
+mod service_tree;
 
-use std::collections::HashMap;
 use std::env;
 use std::fs::{self, File};
 use std::io::{Error, Result};
@@ -24,8 +23,8 @@ use std::path::Path;
 
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
-use dependency::{graph_from_services, start_services};
 use service::services;
+use service_tree::ServiceTree;
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -37,11 +36,11 @@ fn switch_stdio(stdio: &str) -> Result<()> {
     let stderr = unsafe { File::from_raw_fd(
         syscall::open(stdio, O_WRONLY).map_err(|err| Error::from_raw_os_error(err.errno))?
     ) };
-
+    
     syscall::dup2(stdin.as_raw_fd(), 0, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
     syscall::dup2(stdout.as_raw_fd(), 1, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
     syscall::dup2(stderr.as_raw_fd(), 2, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
-
+    
     Ok(())
 }
 
@@ -53,8 +52,8 @@ pub fn main() {
     
     // This way we can continue to support old systems that still have init.rc
     if let Err(_) = fs::metadata("initfs:/etc/init.rc") {
-        if let Err(err) = legacy::run(&Path::new("initfs:etc/init.rc")) {
-            error!("failed to run initfs:etc/init.rc: {}", err);
+        if let Err(err) = legacy::run(&Path::new("initfs:/etc/init.rc")) {
+            error!("failed to run initfs:/etc/init.rc: {}", err);
         }
     } else {
         let service_list = services("initfs:/etc/init.d")
@@ -63,10 +62,11 @@ pub fn main() {
                 vec![]
             });
         
-        let service_graph = graph_from_services(service_list);
-        let mut provide_hooks = HashMap::with_capacity(2);
-        
-        provide_hooks.insert("file:".into(), || {
+        let mut service_graph = ServiceTree::new();
+        //let service_graph2 = service_graph.clone();
+        service_graph.push_services(service_list);
+        /*
+        service_graph.provide_hook("file:".to_string(), Box::new(|service_graph| {
                 info!("setting cwd to file:");
                 if let Err(err) = env::set_current_dir("file:") {
                     error!("failed to set cwd: {}", err);
@@ -81,22 +81,23 @@ pub fn main() {
                         vec![]
                     });
                 
-                dependency::graph_add_services(&mut service_graph, fs_services);
-                start_services(service_graph, HashMap::new());
-            });
-        provide_hooks.insert("display:".into(), || {
+                service_graph.push_services(fs_services);
+                service_graph.start_services();
+            }));
+        service_graph.provide_hook("display:".to_string(), Box::new(|service_graph| {
                 switch_stdio("display:1")
                     .unwrap_or_else(|err| {
                         warn!("{}", err);
                     });
-            });
+            }));*/
         
         info!("setting PATH=initfs:/bin");
         env::set_var("PATH", "initfs:/bin");
         
-        start_services(service_graph, provide_hooks);
+        service_graph.start_services();
     }
     
+    // Might should not do this
     syscall::setrens(0, 0).expect("init: failed to enter null namespace");
     
     loop {
