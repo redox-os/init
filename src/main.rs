@@ -4,6 +4,7 @@ extern crate failure;
 extern crate generational_arena;
 #[macro_use]
 extern crate log;
+extern crate rayon;
 #[macro_use]
 extern crate serde_derive;
 extern crate simple_logger;
@@ -51,7 +52,7 @@ pub fn main() {
         });
     
     // This way we can continue to support old systems that still have init.rc
-    if let Err(_) = fs::metadata("initfs:/etc/init.rc") {
+    if let Ok(_) = fs::metadata("initfs:/etc/init.rc") {
         if let Err(err) = legacy::run(&Path::new("initfs:/etc/init.rc")) {
             error!("failed to run initfs:/etc/init.rc: {}", err);
         }
@@ -63,7 +64,6 @@ pub fn main() {
             });
         
         let mut service_graph = ServiceTree::new();
-        //let service_graph2 = service_graph.clone();
         service_graph.push_services(service_list);
         /*
         service_graph.provide_hook("file:".to_string(), Box::new(|service_graph| {
@@ -94,7 +94,7 @@ pub fn main() {
         info!("setting PATH=initfs:/bin");
         env::set_var("PATH", "initfs:/bin");
         
-        service_graph.start_services();
+        service_graph.start_services(true);
     }
     
     // Might should not do this

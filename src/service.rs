@@ -6,8 +6,11 @@ use std::fs::{File, read_dir};
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
+//use std::sync::mpsc::Sender;
+//use std::thread;
 
 use failure::Error;
+//use generational_arena::Index;
 use toml;
 
 #[derive(Debug)]
@@ -37,11 +40,13 @@ pub struct Method {
 }
 
 impl Method {
-    /// Replace any arguments that are environment variables
+    /// Replace any arguments in `cmd` that are environment variables
     /// with the value stored in that environment variable
     ///
-    /// The `$` must be the first character in the argument
-    // (Maybe change that)
+    /// The `$` must be the first character in the argument (other than
+    /// whitespace, that should be changed)
+    //TODO: Allow env-var args to be only partially env vars
+    // Eg: allow `--target=$MY_VAR`
     fn sub_env(&mut self) {
         let modified_cmd = self.cmd.drain(..)
             .map(|arg| if arg.trim().starts_with('$') {
@@ -55,6 +60,12 @@ impl Method {
             .collect();
         self.cmd = modified_cmd;
     }
+    /* WIP
+    pub fn spawn(&self, channel: Sender<(Index, State)>) {
+        thread::spawn(move || {
+            
+        });
+    }*/
     
     pub fn wait(&self) {
         let mut cmd = Command::new(&self.cmd[0]);

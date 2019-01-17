@@ -99,7 +99,7 @@ impl<T> DepGraph<T> {
     ///
     /// # Note
     /// This function currently does NOT resolve dependency cycles or other complicated things.
-    /// Be careful, you'll likely end up with an infinite loop.
+    /// Be careful if your tree includes circular dependencies, you'll likely end up with an infinite loop.
     pub fn linear_resolve(&self) -> Vec<Index> {
         let arena_len = self.graph.len();
         let mut resolved = Vec::with_capacity(arena_len);
@@ -119,10 +119,40 @@ impl<T> DepGraph<T> {
         }
         resolved
     }
-    /*
+    
+    /// Another naive algorithm that resolves the dependency graph into groups of
+    /// dependencies whose contents are not co-dependent.
+    ///
+    /// # Example
+    /// ```rust
+    /// let groups = dep_graph.grouped_resolve();
+    /// # groups[0] contains no Ts that are dependent upon each other
+    /// ```
     pub fn grouped_resolve(&self) -> Vec<Vec<Index>> {
+        let arena_len = self.graph.len();
         let mut groups = vec![vec![]];
+        let mut group_count = 0;
+        let mut seen = HashSet::with_capacity(arena_len);
         
-        for (index, node)
-    }*/
+        while seen.len() < arena_len {
+            for (index, node) in self.graph.iter() {
+                if !seen.contains(&index) &&
+                    (node.dependencies.is_empty() ||
+                    node.dependencies.iter()
+                        .all(|index| if group_count != 0 {
+                            groups[0..group_count - 1].iter().flatten()
+                                .any(|i| i == index)
+                        } else {
+                            false
+                        }))
+                {
+                    seen.insert(index);
+                    groups[group_count].push(index);
+                }
+            }
+            group_count += 1;
+            groups.push(vec![]);
+        }
+        groups
+    }
 }

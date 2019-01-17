@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use generational_arena::Index;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use dep_graph::DepGraph;
 use service::{Service, State};
@@ -65,9 +66,58 @@ impl ServiceTree {
     
     /// WIP: This function attempts to run the start method on each service in the graph
     /// if it is not already running.
-    pub fn start_services(&mut self) {
-        let resolved = self.graph.linear_resolve();
+    pub fn start_services(&mut self, start_file_services: bool) {
+        let resolved = self.graph.grouped_resolve();
         
+        for group in resolved.iter() {
+            group.iter().for_each(|index| {
+                let service = self.graph.get(*index)
+                    // These should all exist, the resolver can only
+                    // return indexes that are in the graph anyway
+                    .expect("resolved service index did not exist");
+                
+                if let Some(method) = service.methods.get("start") {
+                    if !service.state.is_running() {
+                        method.wait();
+                    }
+                } else {
+                    error!("service {} missing 'start' method", service.name);
+                }
+            });
+        }
+        
+        //Nasty hack. TODO: Remove
+        
+        if start_file_services {
+            use std::env;
+            use service::services;
+            
+            // display:
+            crate::switch_stdio("display:1")
+                .unwrap_or_else(|err| {
+                    warn!("{}", err);
+                });
+            
+            // file:
+            info!("setting cwd to file:");
+            if let Err(err) = env::set_current_dir("file:") {
+                error!("failed to set cwd: {}", err);
+            }
+            
+            info!("setting PATH=file:/bin");
+            env::set_var("PATH", "file:/bin");
+            
+            let fs_services = services("/etc/init.d")
+                .unwrap_or_else(|err| {
+                    warn!("{}", err);
+                    vec![]
+                });
+            
+            self.push_services(fs_services);
+            self.start_services(false);
+        }
+        
+        /*
         for index in resolved.iter() {
             let service = self.graph.get_mut(*index)
                 // These should all exist, we just got them out
@@ -97,6 +147,6 @@ impl ServiceTree {
                     }
                 }
             }*/
-        }
+        }*/
     }
 }
