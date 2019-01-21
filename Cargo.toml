@@ -2,8 +2,10 @@
 name = "init"
 description = "Init system for redox, includes service management"
 version = "0.1.0"
+edition = "2018"
 
 [dependencies]
+crossbeam = "0.6"
 failure = "0.1"
 generational-arena = "0.2"
 log = "0.4"

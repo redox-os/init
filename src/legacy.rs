@@ -8,7 +8,7 @@ use std::io::{Read, Result};
 use std::path::Path;
 use std::process::Command;
 
-use switch_stdio;
+use crate::switch_stdio;
 
 pub fn run(file: &Path) -> Result<()> {
     let mut data = String::new();

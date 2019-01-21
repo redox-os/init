@@ -10,7 +10,9 @@ use std::process::Command;
 //use std::thread;
 
 use failure::Error;
+use log::{error, info};
 //use generational_arena::Index;
+use serde_derive::Deserialize;
 use toml;
 
 #[derive(Debug)]
@@ -60,12 +62,6 @@ impl Method {
             .collect();
         self.cmd = modified_cmd;
     }
-    /* WIP
-    pub fn spawn(&self, channel: Sender<(Index, State)>) {
-        thread::spawn(move || {
-            
-        });
-    }*/
     
     pub fn wait(&self) {
         let mut cmd = Command::new(&self.cmd[0]);

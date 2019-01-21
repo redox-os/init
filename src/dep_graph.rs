@@ -6,14 +6,16 @@ use generational_arena::{Arena, Index};
 /// nice abstraction of a dependency graph
 struct Node<T> {
     inner: T,
-    dependencies: Vec<Index>
+    dependencies: Vec<Index>,
+    //dependents: Vec<Index>
 }
 
 impl<T> Node<T> {
     fn new(inner: T) -> Node<T> {
         Node {
             inner,
-            dependencies: vec![]
+            dependencies: vec![],
+            //dependents: vec![]
         }
     }
     
@@ -79,7 +81,7 @@ impl<T> DepGraph<T> {
             .map(|node| node.unwrap() )
     }
     
-    /// Add a dependent relationship between a parent and a child
+    /// Add a dependent-dependency relationship between a parent and a child
     ///
     /// Returns Err(()) if either of the indecies do not exist in the graph
     pub fn dependency(&mut self, dependent: Index, dependency: Index) -> Result<(), ()> {
@@ -87,10 +89,18 @@ impl<T> DepGraph<T> {
             self.graph.get_mut(dependent)
                 .unwrap() // Cannot be None
                 .dependencies.push(dependency);
+            //self.graph.get_mut(dependency)
+            //    .unwrap() //Cannot be None
+            //    .dependents.push(dependent);
             Ok(())
         } else {
             Err(())
         }
+    }
+    
+    /// Returns `None` if `dependent` does not exist, Vec can also be empty
+    pub fn dependencies(&self, dependent: Index) -> Option<&Vec<Index>> {
+        Some(&self.graph.get(dependent)?.dependencies)
     }
     
     /// This function provides a very naive and straightforward algorithm to resolve
