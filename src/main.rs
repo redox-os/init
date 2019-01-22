@@ -1,31 +1,20 @@
 //#![deny(warnings)]
 
-extern crate failure;
-extern crate generational_arena;
-#[macro_use]
-extern crate log;
-extern crate rayon;
-#[macro_use]
-extern crate serde_derive;
-extern crate simple_logger;
-extern crate syscall;
-extern crate toml;
-
 mod dep_graph;
 mod legacy;
 mod service;
 mod service_tree;
 
-use std::env;
 use std::fs::{self, File};
 use std::io::{Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::Path;
 
+use log::{error, warn};
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
-use service::services;
-use service_tree::ServiceTree;
+use crate::service::services;
+use crate::service_tree::ServiceTree;
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -65,36 +54,7 @@ pub fn main() {
         
         let mut service_graph = ServiceTree::new();
         service_graph.push_services(service_list);
-        /*
-        service_graph.provide_hook("file:".to_string(), Box::new(|service_graph| {
-                info!("setting cwd to file:");
-                if let Err(err) = env::set_current_dir("file:") {
-                    error!("failed to set cwd: {}", err);
-                }
-                
-                info!("setting PATH=file:/bin");
-                env::set_var("PATH", "file:/bin");
-                
-                let fs_services = services("/etc/init.d")
-                    .unwrap_or_else(|err| {
-                        warn!("{}", err);
-                        vec![]
-                    });
-                
-                service_graph.push_services(fs_services);
-                service_graph.start_services();
-            }));
-        service_graph.provide_hook("display:".to_string(), Box::new(|service_graph| {
-                switch_stdio("display:1")
-                    .unwrap_or_else(|err| {
-                        warn!("{}", err);
-                    });
-            }));*/
-        
-        info!("setting PATH=initfs:/bin");
-        env::set_var("PATH", "initfs:/bin");
-        
-        service_graph.start_services(true);
+        service_graph.start_services();
     }
     
     // Might should not do this

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use generational_arena::Index;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use log::{error, warn};
 
-use dep_graph::DepGraph;
-use service::{Service, State};
+use crate::dep_graph::DepGraph;
+use crate::service::{Service, services, State};
 
 /// Main data structure for init, containing the main interface
 /// for dealing with services
@@ -66,12 +66,12 @@ impl ServiceTree {
     
     /// WIP: This function attempts to run the start method on each service in the graph
     /// if it is not already running.
-    pub fn start_services(&mut self, start_file_services: bool) {
-        let resolved = self.graph.grouped_resolve();
+    pub fn start_services(&mut self) {
+        let resolved = self.graph.linear_resolve();
         
-        for group in resolved.iter() {
-            group.iter().for_each(|index| {
-                let service = self.graph.get(*index)
+        for index /*group*/ in resolved.iter() {
+            //for index in group.iter() {
+                let mut service = self.graph.get_mut(*index)
                     // These should all exist, the resolver can only
                     // return indexes that are in the graph anyway
                     .expect("resolved service index did not exist");
@@ -79,74 +79,33 @@ impl ServiceTree {
                 if let Some(method) = service.methods.get("start") {
                     if !service.state.is_running() {
                         method.wait();
+                        service.state = State::Online;
                     }
                 } else {
                     error!("service {} missing 'start' method", service.name);
                 }
-            });
-        }
-        
-        //Nasty hack. TODO: Remove
-        
-        if start_file_services {
-            use std::env;
-            use service::services;
-            
-            // display:
-            crate::switch_stdio("display:1")
-                .unwrap_or_else(|err| {
-                    warn!("{}", err);
-                });
-            
-            // file:
-            info!("setting cwd to file:");
-            if let Err(err) = env::set_current_dir("file:") {
-                error!("failed to set cwd: {}", err);
-            }
-            
-            info!("setting PATH=file:/bin");
-            env::set_var("PATH", "file:/bin");
-            
-            let fs_services = services("/etc/init.d")
-                .unwrap_or_else(|err| {
-                    warn!("{}", err);
-                    vec![]
-                });
-            
-            self.push_services(fs_services);
-            self.start_services(false);
-        }
-        
-        /*
-        for index in resolved.iter() {
-            let service = self.graph.get_mut(*index)
-                // These should all exist, we just got them out
-                .expect("resolved service index did not exist");
-            
-            if let Some(method) = service.methods.get("start") {
-                if !service.state.is_running() {
-                    method.wait();
-                }
-            } else {
-                error!("service {} missing 'start' method", service.name);
-                service.state = State::Failed;
-            }
-            
-            //TODO: Better solution to this
-            //  Should be able to get rid of the mutable borrow here I hope
-            service.state = State::Online;
-            /*
-            if let Some(on_provided) = self.provide_hooks.get(&service.name) {
-                on_provided(self);
-            }
-            
-            if let Some(ref provides) = service.provides {
-                for provide in provides.iter() {
-                    if let Some(on_provided) = self.provide_hooks.get(provide) {
-                        on_provided(self);
+                
+                if let Some(provides) = &service.provides {
+                    
+                    if provides.contains(&"display:".to_string()) {
+                        crate::switch_stdio("display:1")
+                            .unwrap_or_else(|err| {
+                                warn!("{}", err);
+                            });
+                    }
+                    
+                    if provides.contains(&"file:".to_string()) {
+                        let fs_services = services("/etc/init.d")
+                            .unwrap_or_else(|err| {
+                                warn!("{}", err);
+                                vec![]
+                            });
+                        
+                        self.push_services(fs_services);
+                        self.start_services();
                     }
                 }
-            }*/
-        }*/
+            //}
+        }
     }
 }
