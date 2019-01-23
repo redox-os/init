@@ -1,4 +1,5 @@
 //#![deny(warnings)]
+#![feature(dbg_macro)]
 
 mod dep_graph;
 mod legacy;
@@ -8,13 +9,15 @@ mod service_tree;
 use std::fs::{self, File};
 use std::io::{Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use log::{error, warn};
+use log::error;
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
 use crate::service::services;
 use crate::service_tree::ServiceTree;
+
+const INITFS_SERVICE_DIR: &str = "initfs:/etc/init.d";
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -34,6 +37,41 @@ fn switch_stdio(stdio: &str) -> Result<()> {
     Ok(())
 }
 
+trait PathExt {
+    fn scheme(&self) -> Option<PathBuf>;
+}
+
+impl PathExt for Path {
+    //TODO: Could be better written, gross indexing
+    fn scheme(&self) -> Option<PathBuf> {
+        /*
+        let last = self//.as_ref()
+            .ancestors()
+            .filter(|element| element != &Path::new("") )
+            .last();
+        // lossy is fine 'cause Redox
+        let last = String::from(last?.to_string_lossy());
+        let last_len: usize = last.len();
+        
+        // Redox returns `file:/` as the last, not `file:`
+        if last.get(last_len - 1usize)? == ":" {
+            Some(Path::new(&last))
+        } else if (last.get(last_len - 1usize)? == "/") && (last.get(last_len - 2usize)? == ":") {
+            Some(Path::new(last.get(0usize..last_len - 1usize)?))
+        } else {
+            None
+        }*/
+        let path = self.as_os_str()
+            .to_string_lossy();
+        
+        if let Some(indx) = path.find(':') {
+            Some(PathBuf::from(&path[..indx + 1]))
+        } else {
+            None
+        }
+    }
+}
+
 pub fn main() {
     simple_logger::init()
         .unwrap_or_else(|err| {
@@ -46,9 +84,9 @@ pub fn main() {
             error!("failed to run initfs:/etc/init.rc: {}", err);
         }
     } else {
-        let service_list = services("initfs:/etc/init.d")
+        let service_list = services(INITFS_SERVICE_DIR)
             .unwrap_or_else(|err| {
-                warn!("{}", err);
+                error!("error parsing service directory '{}': {}", INITFS_SERVICE_DIR, err);
                 vec![]
             });
         

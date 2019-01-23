@@ -4,35 +4,22 @@ use generational_arena::Index;
 use log::{error, warn};
 
 use crate::dep_graph::DepGraph;
-use crate::service::{Service, services, State};
+use crate::service::{Service, services};
+
+const FS_SERVICE_DIR: &str = "file:/etc/init.d";
 
 /// Main data structure for init, containing the main interface
 /// for dealing with services
 pub struct ServiceTree {
-    graph: DepGraph<Service>,
-    //provide_hooks: HashMap<String, Box<FnMut(&mut ServiceTree)>>
+    graph: DepGraph<Service>
 }
 
 impl ServiceTree {
     pub fn new() -> ServiceTree {
         ServiceTree {
-            graph: DepGraph::new(),
-            //provide_hooks: HashMap::new()
+            graph: DepGraph::new()
         }
     }
-    /*
-     * There are a couple of places where code like this is commented out,
-     * the code that exists is horribly broken. Looking for a better solution.
-     */
-    /// Add a hook to be called after a dependency has been provided.
-    /// The dep can be a service's name, or anything listed in the 'provides'
-    /// field in a service.toml. Currently this is backed by a hashmap, so
-    /// it will silently overwrite an existing entry if called multiple
-    /// times with the same dep.
-    /*
-    pub fn provide_hook(&mut self, dep: String, hook: Box<FnMut(&mut ServiceTree)>) {
-        self.provide_hooks.insert(dep, hook);
-    }*/
     
     /// Push some services into the graph, and add their dependency nodes.
     /// Note that this does not start any services, only their metadata
@@ -57,6 +44,7 @@ impl ServiceTree {
                         // It's not a super big deal if a dependency doesn't exist
                         // I mean, it is, but IDK what to do in that situation
                         //   It's really a pkg problem at that point
+                        //TODO: The dep really needs to be invalidated in some way
                         None => warn!("dependency not found: {}", dependency)
                     }
                 }
@@ -65,44 +53,48 @@ impl ServiceTree {
     }
     
     /// WIP: This function attempts to run the start method on each service in the graph
-    /// if it is not already running.
+    /// if it is not already running or starting.
     pub fn start_services(&mut self) {
         let resolved = self.graph.linear_resolve();
         
         for index /*group*/ in resolved.iter() {
             //for index in group.iter() {
-                let mut service = self.graph.get_mut(*index)
+                let service = self.graph.get_mut(*index)
                     // These should all exist, the resolver can only
                     // return indexes that are in the graph anyway
                     .expect("resolved service index did not exist");
                 
-                if let Some(method) = service.methods.get("start") {
-                    if !service.state.is_running() {
-                        method.wait();
-                        service.state = State::Online;
-                    }
-                } else {
-                    error!("service {} missing 'start' method", service.name);
-                }
-                
-                if let Some(provides) = &service.provides {
+                if !(service.state.is_starting() || service.state.is_online()) {
+                    service.wait_method(&"start".to_string())
+                        .unwrap_or_else(|err| { error!("error starting service '{}': {}", service.name, err) });
                     
-                    if provides.contains(&"display:".to_string()) {
-                        crate::switch_stdio("display:1")
-                            .unwrap_or_else(|err| {
-                                warn!("{}", err);
-                            });
-                    }
-                    
-                    if provides.contains(&"file:".to_string()) {
-                        let fs_services = services("/etc/init.d")
-                            .unwrap_or_else(|err| {
-                                warn!("{}", err);
-                                vec![]
-                            });
+                    if let Some(provides) = &service.provides {
+                        /*
+                        if provides.contains(&"display:".to_string()) {
+                            crate::switch_stdio("display:1")
+                                .unwrap_or_else(|err| {
+                                    warn!("{}", err);
+                                });
+                        }*/
                         
-                        self.push_services(fs_services);
-                        self.start_services();
+                        if provides.contains(&"file:".to_string()) {
+                            let fs_services = services(FS_SERVICE_DIR)
+                                .unwrap_or_else(|err| {
+                                    error!("error parsing service directory '{}': {}", FS_SERVICE_DIR, err);
+                                    vec![]
+                                });
+                            
+                            // This is surely a poor descision, should probably be
+                            //   made on a per-service basis
+                            /*
+                            info!("setting cwd to 'file:'");
+                            if let Err(err) = env::set_current_dir("file:") {
+                                error!("failed to set cwd: {}", err);
+                            }*/
+                            
+                            self.push_services(fs_services);
+                            self.start_services();
+                        }
                     }
                 }
             //}
