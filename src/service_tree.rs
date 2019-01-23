@@ -4,20 +4,25 @@ use generational_arena::Index;
 use log::{error, warn};
 
 use crate::dep_graph::DepGraph;
-use crate::service::{Service, services};
+use crate::service::Service;
 
 const FS_SERVICE_DIR: &str = "file:/etc/init.d";
 
 /// Main data structure for init, containing the main interface
 /// for dealing with services
 pub struct ServiceTree {
-    graph: DepGraph<Service>
+    graph: DepGraph<Service>,
+    
+    // Must be sorta global so that dependencies across `push_services`
+    //   boundaries link up correctly.
+    redirect_map: HashMap<String, Index>
 }
 
 impl ServiceTree {
     pub fn new() -> ServiceTree {
         ServiceTree {
-            graph: DepGraph::new()
+            graph: DepGraph::new(),
+            redirect_map: HashMap::new()
         }
     }
     
@@ -27,20 +32,33 @@ impl ServiceTree {
     pub fn push_services(&mut self, mut services: Vec<Service>) {
         self.graph.reserve(services.len());
         
-        let services: HashMap<String, Index> = services.drain(..)
-            .map(|service| (service.name.clone(), self.graph.insert(service)) )
-            .collect();
+        // This is sorta ugly, but provides have to work
+        for service in services.drain(..) {
+            let name = service.name.clone();
+            let provides = service.provides.clone();
+            let index = self.graph.insert(service);
+            
+            if let Some(mut provides) = provides {
+                self.redirect_map.reserve(provides.len() + 1);
+                for provide in provides.drain(..) {
+                    self.redirect_map.insert(provide, index);
+                }
+            }
+            
+            self.redirect_map.insert(name, index);
+        }
         
-        for parent in services.values() {
+        //TODO: Only iterate over the services that are being added
+        for parent in self.redirect_map.values() {
             let dependencies = self.graph.get(*parent)
                 .expect("services were just added")
                 .dependencies.clone();
             
             if let Some(ref dependencies) = dependencies {
                 for dependency in dependencies.iter() {
-                    match services.get(dependency) {
+                    match self.redirect_map.get(dependency) {
                         Some(child) => self.graph.dependency(*parent, *child)
-                            .unwrap_or_else(|_| warn!("failed to add dependency") ),
+                            .unwrap_or_else(|()| warn!("failed to add dependency") ),
                         // It's not a super big deal if a dependency doesn't exist
                         // I mean, it is, but IDK what to do in that situation
                         //   It's really a pkg problem at that point
@@ -78,19 +96,11 @@ impl ServiceTree {
                         }*/
                         
                         if provides.contains(&"file:".to_string()) {
-                            let fs_services = services(FS_SERVICE_DIR)
+                            let fs_services = Service::from_dir(FS_SERVICE_DIR)
                                 .unwrap_or_else(|err| {
                                     error!("error parsing service directory '{}': {}", FS_SERVICE_DIR, err);
                                     vec![]
                                 });
-                            
-                            // This is surely a poor descision, should probably be
-                            //   made on a per-service basis
-                            /*
-                            info!("setting cwd to 'file:'");
-                            if let Err(err) = env::set_current_dir("file:") {
-                                error!("failed to set cwd: {}", err);
-                            }*/
                             
                             self.push_services(fs_services);
                             self.start_services();

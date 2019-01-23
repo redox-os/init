@@ -6,12 +6,9 @@ use std::fs::{File, read_dir};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-//use std::sync::mpsc::Sender;
-//use std::thread;
 
 use failure::{err_msg, Error};
-use log::{error, info};
-//use generational_arena::Index;
+use log::{debug, error, info};
 use serde_derive::Deserialize;
 use toml;
 
@@ -98,7 +95,7 @@ impl Method {
             cmd.current_dir(cwd);
         }
         
-        info!("waiting on {:?}", cmd);
+        debug!("waiting on {:?}", cmd);
         
         cmd.spawn()?
             .wait()?;
@@ -123,7 +120,7 @@ pub struct Service {
 }
 
 impl Service {
-    /// Parse a service file
+    /// Parse a service file, no specific requirements for filetype.
     pub fn from_file(file_path: impl AsRef<Path>) -> Result<Service, Error> {
         let file_path = file_path.as_ref();
         
@@ -135,21 +132,47 @@ impl Service {
         
         //BUG: Only removes the portion after the last '.'
         service.name = file_path.file_stem()
-            .expect("file name empty") // shouldn't be able to happen
+            .ok_or(err_msg("service file path missing filename"))?
             .to_string_lossy() // Redox uses unicode, this should never fail
             .into();
         service.sub_env();
         
         // Assume that the scheme this service came from is the one
-        //   that the service should be started in.
+        //   that the service should be started in
         if let None = service.cwd {
-            // Only if it's a canonical path though
             if let Some(scheme) = file_path.scheme() {
-                info!("setting service '{}' cwd to {}", service.name, scheme);
                 service.cwd = Some(scheme);
             }
         }
         Ok(service)
+    }
+    
+    /// Parse all the toml files in a directory as services
+    pub fn from_dir(dir: impl AsRef<Path>) -> Result<Vec<Service>, Error> {
+        let mut services = vec![];
+        
+        for file in read_dir(&dir)? {
+            let file_path = match file {
+                Ok(file) => file,
+                Err(err) => {
+                    error!("{}", err);
+                    continue
+                }
+            }.path();
+            
+            let is_toml = match file_path.extension() {
+                Some(ext) => ext == OsStr::new("toml"),
+                None => false
+            };
+            
+            if is_toml {
+                match Service::from_file(file_path) {
+                    Ok(service) => services.push(service),
+                    Err(err) => error!("error parsing service file '{:#?}': {}", dir.as_ref(), err)
+                }
+            }
+        }
+        Ok(services)
     }
     
     /// Substitue all fields which support environment variable
@@ -177,32 +200,4 @@ impl Service {
             }
         }
     }
-}
-
-/// Parse all the toml files in a directory as services
-pub fn services(dir: impl AsRef<Path>) -> Result<Vec<Service>, Error> {
-    let mut services = vec![];
-    
-    for file in read_dir(&dir)? {
-        let file_path = match file {
-            Ok(file) => file,
-            Err(err) => {
-                error!("{}", err);
-                continue
-            }
-        }.path();
-        
-        let is_toml = match file_path.extension() {
-            Some(ext) => ext == OsStr::new("toml"),
-            None => false
-        };
-        
-        if is_toml {
-            match Service::from_file(file_path) {
-                Ok(service) => services.push(service),
-                Err(err) => error!("error parsing service file '{:#?}': {}", dir.as_ref(), err)
-            }
-        }
-    }
-    Ok(services)
 }

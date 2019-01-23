@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use log::error;
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
-use crate::service::services;
+use crate::service::Service;
 use crate::service_tree::ServiceTree;
 
 const INITFS_SERVICE_DIR: &str = "initfs:/etc/init.d";
@@ -44,23 +44,6 @@ trait PathExt {
 impl PathExt for Path {
     //TODO: Could be better written, gross indexing
     fn scheme(&self) -> Option<PathBuf> {
-        /*
-        let last = self//.as_ref()
-            .ancestors()
-            .filter(|element| element != &Path::new("") )
-            .last();
-        // lossy is fine 'cause Redox
-        let last = String::from(last?.to_string_lossy());
-        let last_len: usize = last.len();
-        
-        // Redox returns `file:/` as the last, not `file:`
-        if last.get(last_len - 1usize)? == ":" {
-            Some(Path::new(&last))
-        } else if (last.get(last_len - 1usize)? == "/") && (last.get(last_len - 2usize)? == ":") {
-            Some(Path::new(last.get(0usize..last_len - 1usize)?))
-        } else {
-            None
-        }*/
         let path = self.as_os_str()
             .to_string_lossy();
         
@@ -84,7 +67,7 @@ pub fn main() {
             error!("failed to run initfs:/etc/init.rc: {}", err);
         }
     } else {
-        let service_list = services(INITFS_SERVICE_DIR)
+        let service_list = Service::from_dir(INITFS_SERVICE_DIR)
             .unwrap_or_else(|err| {
                 error!("error parsing service directory '{}': {}", INITFS_SERVICE_DIR, err);
                 vec![]
