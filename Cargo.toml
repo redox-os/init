@@ -1,10 +1,11 @@
 [package]
-name = "init"
 description = "Init system for redox, includes service management"
-version = "0.1.0"
 edition = "2018"
+name = "init"
+version = "0.1.0"
 
 [dependencies]
+chashmap = "2.2"
 failure = "0.1"
 generational-arena = "0.2"
 log = "0.4"

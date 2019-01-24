@@ -15,9 +15,10 @@ use log::error;
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
 use crate::service::Service;
-use crate::service_tree::ServiceTree;
+use crate::service_tree::ServiceGraph;
 
 const INITFS_SERVICE_DIR: &str = "initfs:/etc/init.d";
+const FS_SERVICE_DIR: &str = "file:/etc/init.d";
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -67,14 +68,30 @@ pub fn main() {
             error!("failed to run initfs:/etc/init.rc: {}", err);
         }
     } else {
-        let service_list = Service::from_dir(INITFS_SERVICE_DIR)
+        let initfs_services = Service::from_dir(INITFS_SERVICE_DIR)
             .unwrap_or_else(|err| {
                 error!("error parsing service directory '{}': {}", INITFS_SERVICE_DIR, err);
                 vec![]
             });
         
-        let mut service_graph = ServiceTree::new();
-        service_graph.push_services(service_list);
+        let mut service_graph = ServiceGraph::new();
+        service_graph.push_services(initfs_services);
+        service_graph.start_services();
+        
+        //*
+        crate::switch_stdio("display:1")
+            .unwrap_or_else(|err| {
+                error!("error switching stdio: {}", err);
+            });
+        // */
+        
+        let fs_services = Service::from_dir(FS_SERVICE_DIR)
+            .unwrap_or_else(|err| {
+                error!("error parsing service directory '{}': {}", FS_SERVICE_DIR, err);
+                vec![]
+            });
+        
+        service_graph.push_services(fs_services);
         service_graph.start_services();
     }
     

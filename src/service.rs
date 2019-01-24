@@ -15,30 +15,17 @@ use toml;
 use crate::PathExt;
 use self::ServiceState::*;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ServiceState {
     Offline,
-    // This might be surperfluous, I included it for
-    //   a dumb debugging reason, might take it out later.
-    Starting,
     Online,
     Failed
 }
 
 impl ServiceState {
-    pub fn is_starting(&self) -> bool {
-        match self {
-            Offline => false,
-            Starting => true,
-            Online => false,
-            Failed => false
-        }
-    }
-    
     pub fn is_online(&self) -> bool {
         match self {
             Offline => false,
-            Starting => false,
             Online => true,
             Failed => false
         }
@@ -114,9 +101,6 @@ pub struct Service {
     
     pub vars: Option<HashMap<String, String>>,
     pub cwd: Option<PathBuf>,
-    
-    #[serde(skip)]
-    pub state: ServiceState
 }
 
 impl Service {
@@ -184,14 +168,12 @@ impl Service {
     }
     
     /// Spawn the process indicated by a method on this service and `wait()` on it.
-    pub fn wait_method(&mut self, method_name: &String) -> Result<(), Error> {
+    pub fn wait_method(&self, method_name: &String) -> Result<(), Error> {
         match self.methods.get(method_name) {
             Some(method) => {
                 info!("running method '{}' for service '{}'", method_name, self.name);
                 
-                self.state = ServiceState::Starting;
                 method.wait(&self.vars, &self.cwd)?;
-                self.state = ServiceState::Online; //TODO: Transition statemap out of metadata graph
                 Ok(())
             },
             None => {

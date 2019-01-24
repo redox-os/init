@@ -1,28 +1,33 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 
+use chashmap::CHashMap;
+use failure::{err_msg, Error};
 use generational_arena::Index;
 use log::{error, warn};
+//use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::dep_graph::DepGraph;
-use crate::service::Service;
-
-const FS_SERVICE_DIR: &str = "file:/etc/init.d";
+use crate::service::{Service, ServiceState};
 
 /// Main data structure for init, containing the main interface
 /// for dealing with services
-pub struct ServiceTree {
+pub struct ServiceGraph {
     graph: DepGraph<Service>,
     
     // Must be sorta global so that dependencies across `push_services`
     //   boundaries link up correctly.
-    redirect_map: HashMap<String, Index>
+    redirect_map: HashMap<String, Index>,
+    
+    state_map: CHashMap<Index, ServiceState>
 }
 
-impl ServiceTree {
-    pub fn new() -> ServiceTree {
-        ServiceTree {
+impl ServiceGraph {
+    pub fn new() -> ServiceGraph {
+        ServiceGraph {
             graph: DepGraph::new(),
-            redirect_map: HashMap::new()
+            redirect_map: HashMap::new(),
+            state_map: CHashMap::new()
         }
     }
     
@@ -31,6 +36,7 @@ impl ServiceTree {
     /// is inserted into the graph. Metadata for services is not manipulated
     pub fn push_services(&mut self, mut services: Vec<Service>) {
         self.graph.reserve(services.len());
+        self.state_map.reserve(services.len());
         
         // This is sorta ugly, but provides have to work
         for service in services.drain(..) {
@@ -46,6 +52,7 @@ impl ServiceTree {
             }
             
             self.redirect_map.insert(name, index);
+            self.state_map.insert(index, ServiceState::default());
         }
         
         //TODO: Only iterate over the services that are being added
@@ -63,51 +70,42 @@ impl ServiceTree {
                         // I mean, it is, but IDK what to do in that situation
                         //   It's really a pkg problem at that point
                         //TODO: The dep really needs to be invalidated in some way
-                        None => warn!("dependency not found: {}", dependency)
+                        None => warn!("dependency not found: '{}'", dependency)
                     }
                 }
             }
         }
     }
     
-    /// WIP: This function attempts to run the start method on each service in the graph
-    /// if it is not already running or starting.
-    pub fn start_services(&mut self) {
-        let resolved = self.graph.linear_resolve();
+    /// Runs the `start` method of a service if the service referenced by
+    /// `index` exists, and the service is not already running.
+    pub fn start_service(&self, index: Index) -> Result<(), Error> {
+        let service = self.graph.get(index)
+            .ok_or(err_msg("service not found"))?;
         
-        for index /*group*/ in resolved.iter() {
-            //for index in group.iter() {
-                let service = self.graph.get_mut(*index)
-                    // These should all exist, the resolver can only
-                    // return indexes that are in the graph anyway
-                    .expect("resolved service index did not exist");
-                
-                if !(service.state.is_starting() || service.state.is_online()) {
-                    service.wait_method(&"start".to_string())
-                        .unwrap_or_else(|err| { error!("error starting service '{}': {}", service.name, err) });
-                    
-                    if let Some(provides) = &service.provides {
-                        /*
-                        if provides.contains(&"display:".to_string()) {
-                            crate::switch_stdio("display:1")
-                                .unwrap_or_else(|err| {
-                                    warn!("{}", err);
-                                });
-                        }*/
-                        
-                        if provides.contains(&"file:".to_string()) {
-                            let fs_services = Service::from_dir(FS_SERVICE_DIR)
-                                .unwrap_or_else(|err| {
-                                    error!("error parsing service directory '{}': {}", FS_SERVICE_DIR, err);
-                                    vec![]
-                                });
-                            
-                            self.push_services(fs_services);
-                            self.start_services();
-                        }
-                    }
-                }
-            //}
+        let service_state = self.state_map.get(&index)
+            .map(|guard| *guard.deref() )
+            .unwrap_or(ServiceState::Offline);
+        
+        if !service_state.is_online() {
+            service.wait_method(&"start".to_string())?;
+            
+            self.state_map.insert(index, ServiceState::Online);
+        }
+        Ok(())
+    }
+    
+    /// Find a solution to the dependency tree and run `ServiceGraph::start_service`
+    /// on each index in the tree.
+    pub fn start_services(&self) {
+        let resolved = self.graph.grouped_resolve();
+        
+        for group in resolved.iter() {
+            //TODO: Use par_iter() if rayon will work on redox
+            group.iter().for_each(|index| {
+                self.start_service(*index)
+                    .unwrap_or_else(|err| { error!("error starting service: {}", err) });
+            });
         }
     }
 }

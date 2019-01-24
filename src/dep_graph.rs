@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashSet;
 
 use generational_arena::{Arena, Index};
@@ -128,6 +130,7 @@ impl<T> DepGraph<T> {
     /// let groups = dep_graph.grouped_resolve();
     /// # groups[0] contains no Ts that are dependent upon each other
     /// ```
+    // Don't ask how this works, I have no idea
     pub fn grouped_resolve(&self) -> Vec<Vec<Index>> {
         let arena_len = self.graph.len();
         let mut groups = vec![vec![]];
