@@ -43,16 +43,13 @@ trait PathExt {
 }
 
 impl PathExt for Path {
-    //TODO: Could be better written, gross indexing
+    // Credit to @stratact for this implemenation
     fn scheme(&self) -> Option<PathBuf> {
         let path = self.as_os_str()
             .to_string_lossy();
         
-        if let Some(indx) = path.find(':') {
-            Some(PathBuf::from(&path[..indx + 1]))
-        } else {
-            None
-        }
+        path.find(':')
+            .map(|i| path[..i + 1].into())
     }
 }
 
@@ -68,13 +65,15 @@ pub fn main() {
             error!("failed to run initfs:/etc/init.rc: {}", err);
         }
     } else {
+        //std::env::set_var("RUST_BACKTRACE", "1");
+        
         let initfs_services = Service::from_dir(INITFS_SERVICE_DIR)
             .unwrap_or_else(|err| {
                 error!("error parsing service directory '{}': {}", INITFS_SERVICE_DIR, err);
                 vec![]
             });
         
-        let mut service_graph = ServiceGraph::new();
+        let service_graph = ServiceGraph::new();
         service_graph.push_services(initfs_services);
         service_graph.start_services();
         
