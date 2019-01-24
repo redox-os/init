@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use failure::{err_msg, Error};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use serde_derive::Deserialize;
 use toml;
 
@@ -133,6 +133,8 @@ impl Service {
     
     /// Parse all the toml files in a directory as services
     pub fn from_dir(dir: impl AsRef<Path>) -> Result<Vec<Service>, Error> {
+        trace!("parsing services from '{:#?}'", dir.as_ref());
+        
         let mut services = vec![];
         
         for file in read_dir(&dir)? {

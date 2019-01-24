@@ -11,7 +11,7 @@ use std::io::{Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
 
-use log::error;
+use log::{error, trace};
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
 use crate::service::Service;
@@ -54,12 +54,14 @@ impl PathExt for Path {
 }
 
 pub fn main() {
+    trace!("initializing logger");
     simple_logger::init()
         .unwrap_or_else(|err| {
             println!("init: failed to start logger: {}", err);
         });
     
     // This way we can continue to support old systems that still have init.rc
+    trace!("testing init type");
     if let Ok(_) = fs::metadata("initfs:/etc/init.rc") {
         if let Err(err) = legacy::run(&Path::new("initfs:/etc/init.rc")) {
             error!("failed to run initfs:/etc/init.rc: {}", err);
@@ -67,14 +69,19 @@ pub fn main() {
     } else {
         //std::env::set_var("RUST_BACKTRACE", "1");
         
+        trace!("parsing initfs services");
         let initfs_services = Service::from_dir(INITFS_SERVICE_DIR)
             .unwrap_or_else(|err| {
                 error!("error parsing service directory '{}': {}", INITFS_SERVICE_DIR, err);
                 vec![]
             });
         
+        trace!("initializing service graph");
         let service_graph = ServiceGraph::new();
+        
         service_graph.push_services(initfs_services);
+        
+        trace!("starting initfs services");
         service_graph.start_services();
         
         //*
