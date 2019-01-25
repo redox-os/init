@@ -5,7 +5,7 @@ use chashmap::CHashMap;
 use failure::{err_msg, Error};
 use generational_arena::Index;
 use log::{error, warn};
-//use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::dep_graph::DepGraph;
 use crate::service::{Service, ServiceState};
@@ -17,6 +17,8 @@ use crate::service::{Service, ServiceState};
 pub struct ServiceGraph {
     graph: RwLock<DepGraph<Service>>,
     
+    /// Names of services (and provides of services) mapped to the
+    ///   service index that provides that name.
     // Must be sorta global so that dependencies across `push_services`
     //   boundaries link up correctly.
     redirect_map: CHashMap<String, Index>,
@@ -36,6 +38,7 @@ impl ServiceGraph {
     /// Push some services into the graph, and add their dependency nodes.
     /// Note that this does not start any services, only their metadata
     /// is inserted into the graph. Metadata for services is not manipulated
+    //TODO: Split this into a couple funcs
     pub fn push_services(&self, mut services: Vec<Service>) {
         let mut graph = self.graph.write()
             .expect("service graph mutex poisoned");
@@ -94,6 +97,8 @@ impl ServiceGraph {
     }
     
     // Allow for less time spent locking and unlocking the graph
+    // Ofc `self.graph.read()` and `graph` are probably going to
+    // end up the same, the point is to prevent lots of unessasary locking.
     fn start_service_with_graph(&self, graph: &DepGraph<Service>, index: Index) -> Result<(), Error> {
         let service = graph.get(index)
             .ok_or(err_msg("service not found"))?;
@@ -119,7 +124,7 @@ impl ServiceGraph {
         
         for group in resolved.iter() {
             //TODO: Use par_iter() if rayon will work on redox
-            group.iter().for_each(|index| {
+            group.par_iter().for_each(|index| {
                 self.start_service_with_graph(&graph, *index)
                     .unwrap_or_else(|err| { error!("error starting service: {}", err) });
             });

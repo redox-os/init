@@ -53,8 +53,8 @@ impl Method {
         let modified_cmd = self.cmd.drain(..)
             .map(|arg| if arg.trim().starts_with('$') {
                     let (_, varname) = arg.split_at(1);
-                    let val = env::var(varname).unwrap_or(String::new());
-                    println!("{:?}", val);
+                    let val = env::var(&varname).unwrap_or(String::new());
+                    trace!("replacing env ${}={}", varname, val);
                     val
                 } else {
                     arg
@@ -107,6 +107,7 @@ impl Service {
     /// Parse a service file, no specific requirements for filetype.
     pub fn from_file(file_path: impl AsRef<Path>) -> Result<Service, Error> {
         let file_path = file_path.as_ref();
+        trace!("parsing service file: {:#?}", file_path);
         
         let mut data = String::new();
         File::open(&file_path)?
@@ -133,7 +134,7 @@ impl Service {
     
     /// Parse all the toml files in a directory as services
     pub fn from_dir(dir: impl AsRef<Path>) -> Result<Vec<Service>, Error> {
-        trace!("parsing services from '{:#?}'", dir.as_ref());
+        trace!("parsing services from {:#?}", dir.as_ref());
         
         let mut services = vec![];
         
