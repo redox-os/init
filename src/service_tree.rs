@@ -5,7 +5,7 @@ use chashmap::CHashMap;
 use failure::{err_msg, Error};
 use generational_arena::Index;
 use log::{error, warn};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+//use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::dep_graph::DepGraph;
 use crate::service::{Service, ServiceState};
@@ -124,7 +124,7 @@ impl ServiceGraph {
         
         for group in resolved.iter() {
             //TODO: Use par_iter() if rayon will work on redox
-            group.par_iter().for_each(|index| {
+            group.iter().for_each(|index| {
                 self.start_service_with_graph(&graph, *index)
                     .unwrap_or_else(|err| { error!("error starting service: {}", err) });
             });

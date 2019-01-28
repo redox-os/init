@@ -4,11 +4,13 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs::{File, read_dir};
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use failure::{err_msg, Error};
 use log::{debug, error, info, trace};
+use redox_users::{AllGroups, AllUsers};
 use serde_derive::Deserialize;
 use toml;
 
@@ -38,7 +40,26 @@ impl Default for ServiceState {
 
 #[derive(Debug, Deserialize)]
 pub struct Method {
-    pub cmd: Vec<String>
+    /// The command that is executed when this method is "called".
+    pub cmd: Vec<String>,
+    
+    /// Environment variables to set for the process executed by
+    /// this method. Overrides service-level environment variables,
+    /// meaning service-level vars are not set.
+    pub vars: Option<HashMap<String, String>>,
+    /// The current working directory for the process executed
+    /// by this method. Overrides service-level cwd.
+    pub cwd: Option<PathBuf>,
+    
+    /// Username to run this method's process as. Overrides
+    /// service-level username. Must be present in order to use
+    /// `group`. Defaults to `root`.
+    pub user: Option<String>,
+    /// Group name to run this method's process as. Overrides
+    /// service-level username. If `user` is given and `group`
+    /// is not, `user`'s primary group id is used. Defaults to
+    /// `root`.
+    pub group: Option<String>,
 }
 
 impl Method {
@@ -46,7 +67,7 @@ impl Method {
     /// with the value stored in that environment variable
     ///
     /// The `$` must be the first character in the argument (other than
-    /// whitespace, that should be changed)
+    /// whitespace)
     //TODO: Allow env-var args to be only partially env vars
     // Eg: allow `--target=$MY_VAR`
     fn sub_env(&mut self) {
@@ -63,14 +84,21 @@ impl Method {
         self.cmd = modified_cmd;
     }
     
-    pub fn wait(&self, vars: &Option<HashMap<String, String>>, cwd: &Option<impl AsRef<Path>>) -> Result<(), Error> {
+    pub fn wait(&self, vars: Option<&HashMap<String, String>>,
+        cwd: Option<&PathBuf>,
+        user: Option<&String>,
+        group: Option<&String>,
+    ) -> Result<(), Error> {
+        
         let mut cmd = Command::new(&self.cmd[0]);
         cmd.args(self.cmd[1..].iter())
             .env_clear();
         
-        if let Some(vars) = vars {
+        //TODO: Some mechanic that allows use of service-level
+        //   vars. Is that a good idea?
+        if let Some(vars) = self.vars.as_ref().or(vars) {
             // Typechecker hell if you try Command::envs
-            //   This is literally the same
+            //   This is the verbatim impl
             for (var, val) in vars.iter() {
                 cmd.env(var, val);
             }
@@ -78,8 +106,36 @@ impl Method {
         
         // Is inheriting cwd from `init` OK? Should it use the root of
         //   the filesystem the service was parsed from?
-        if let Some(cwd) = cwd {
+        if let Some(cwd) = self.cwd.as_ref().or(cwd) {
             cmd.current_dir(cwd);
+        }
+        
+        // Same as above goes for user and group
+        if let Some(user) = self.user.as_ref().or(user) {
+            let users = AllUsers::new(false)?;
+            
+            if let Some(user) = users.get_by_name(user) {
+                //BUG
+                cmd.uid(user.uid as u32);
+                
+                // Once we know the the user exists, then we can check
+                //   for group stuff.
+                if let Some(group) = self.group.as_ref().or(group) {
+                    let groups = AllGroups::new()?;
+                    
+                    if let Some(group) = groups.get_by_name(group) {
+                        //BUG
+                        cmd.gid(group.gid as u32);
+                    } else {
+                        error!("group does not exist: {}", group);
+                        cmd.gid(user.gid as u32);
+                    }
+                } else {
+                    cmd.gid(user.gid as u32);
+                }
+            } else {
+                error!("user does not exist: {}", user);
+            }
         }
         
         debug!("waiting on {:?}", cmd);
@@ -92,15 +148,43 @@ impl Method {
 
 #[derive(Debug, Deserialize)]
 pub struct Service {
+    /// Deduced from the service configuration file name
     #[serde(skip)]
     pub name: String,
     
+    /// A dependency is required in order for this service
+    /// to be started.
+    /// A dependency is a string that can be either the name
+    /// of another service or a "provide".
     pub dependencies: Option<Vec<String>>,
+    /// A provide can be used to more generally refer to a
+    /// system service as a dependency. For example, depending on
+    /// `file:` instead of `redoxfs` (which provides `file:`).
+    /// This is a very flexible way of defining dependencies.
     pub provides: Option<Vec<String>>,
+    /// Pretending that Services are objects in an OOP manner,
+    /// they must have methods. A method can be "called" by
+    /// init for any number of reasons, or by the user via a
+    /// currently WIP cli utility.
+    /// A service must provide one method: `start`. This is called
+    /// by init in order to start the service. The following
+    /// methods are automatically created internally and can be
+    /// overridden in a service configuration file:
+    ///  - stop
+    ///  - restart
     pub methods: HashMap<String, Method>,
     
+    /// Environment variables used for all methods that are a
+    /// part of this service.
     pub vars: Option<HashMap<String, String>>,
+    /// The current working directory for all methods that are
+    /// a part of this service/
     pub cwd: Option<PathBuf>,
+    
+    /// Username to run all service methods as
+    pub user: Option<String>,
+    /// Groupname to run all service methods as
+    pub group: Option<String>,
 }
 
 impl Service {
@@ -176,7 +260,7 @@ impl Service {
             Some(method) => {
                 info!("running method '{}' for service '{}'", method_name, self.name);
                 
-                method.wait(&self.vars, &self.cwd)?;
+                method.wait(self.vars.as_ref(), self.cwd.as_ref(), self.user.as_ref(), self.group.as_ref())?;
                 Ok(())
             },
             None => {

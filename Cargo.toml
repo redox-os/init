@@ -5,13 +5,16 @@ name = "init"
 version = "0.1.0"
 
 [dependencies]
-chashmap = { git = "https://gitlab.redox-os.org/redox-os/tfs" }
 failure = "0.1"
 generational-arena = "0.2"
 log = "0.4"
-rayon = "1.0"
+#rayon = "1.0"
 redox_syscall = "0.1"
+redox_users = "*"
 serde = "1.0"
 serde_derive = "1.0"
 simple_logger = "1.0"
 toml = "0.4"
+
+[dependencies.chashmap]
+git = "https://gitlab.redox-os.org/redox-os/tfs"
