@@ -1,11 +1,13 @@
 //#![deny(warnings)]
 #![feature(dbg_macro)]
 
+mod command;
 mod dep_graph;
 mod legacy;
 mod service;
 mod service_tree;
 
+use std::env;
 use std::fs::{self, File};
 use std::io::{Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd};
@@ -54,6 +56,8 @@ impl PathExt for Path {
 }
 
 pub fn main() {
+    env::set_var("RUST_BACKTRACE", "1");
+    
     simple_logger::init()
         .unwrap_or_else(|err| {
             println!("init: failed to start logger: {}", err);
@@ -65,26 +69,32 @@ pub fn main() {
             error!("failed to run initfs:/etc/init.rc: {}", err);
         }
     } else {
+        let service_graph = ServiceGraph::new();
+        
         let initfs_services = Service::from_dir(INITFS_SERVICE_DIR)
             .unwrap_or_else(|err| {
-                error!("error parsing service directory '{}': {}", INITFS_SERVICE_DIR, err);
+                error!("failed to parse service directory '{}': {}", INITFS_SERVICE_DIR, err);
                 vec![]
             });
         
-        let service_graph = ServiceGraph::new();
         service_graph.push_services(initfs_services);
         service_graph.start_services();
         
-        //*
+        /*
         crate::switch_stdio("display:1")
             .unwrap_or_else(|err| {
                 error!("error switching stdio: {}", err);
             });
         // */
         
+        env::set_current_dir("file:")
+            .unwrap_or_else(|err| {
+                error!("failed to set cwd: {}", err);
+            });
+        
         let fs_services = Service::from_dir(FS_SERVICE_DIR)
             .unwrap_or_else(|err| {
-                error!("error parsing service directory '{}': {}", FS_SERVICE_DIR, err);
+                error!("failed to parse service directory '{}': {}", FS_SERVICE_DIR, err);
                 vec![]
             });
         

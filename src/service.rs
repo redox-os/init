@@ -4,9 +4,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs::{File, read_dir};
 use std::io::Read;
-use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
 use failure::{err_msg, Error};
 use log::{debug, error, info, trace};
@@ -15,6 +13,7 @@ use serde_derive::Deserialize;
 use toml;
 
 use crate::PathExt;
+use crate::command::Command;
 use self::ServiceState::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -49,7 +48,7 @@ pub struct Method {
     pub vars: Option<HashMap<String, String>>,
     /// The current working directory for the process executed
     /// by this method. Overrides service-level cwd.
-    pub cwd: Option<PathBuf>,
+    pub cwd: Option<String>,
     
     /// Username to run this method's process as. Overrides
     /// service-level username. Must be present in order to use
@@ -60,6 +59,12 @@ pub struct Method {
     /// is not, `user`'s primary group id is used. Defaults to
     /// `root`.
     pub group: Option<String>,
+    
+    /// A process's namespace is the set of schemes which it may
+    /// access during it's entire lifetime. This field maps directly
+    /// to the Redox kernel functionality. Overrides service-level
+    /// namespace declarations.
+    pub namespace: Option<Vec<String>>,
 }
 
 impl Method {
@@ -85,38 +90,34 @@ impl Method {
     }
     
     pub fn wait(&self, vars: Option<&HashMap<String, String>>,
-        cwd: Option<&PathBuf>,
+        cwd: Option<&String>,
         user: Option<&String>,
         group: Option<&String>,
+        namespace: Option<&Vec<String>>,
     ) -> Result<(), Error> {
         
-        let mut cmd = Command::new(&self.cmd[0]);
-        cmd.args(self.cmd[1..].iter())
+        let mut cmd = Command::new(self.cmd[0].clone());
+        cmd.args(self.cmd[1..].to_vec())
             .env_clear();
         
-        //TODO: Some mechanic that allows use of service-level
-        //   vars. Is that a good idea?
         if let Some(vars) = self.vars.as_ref().or(vars) {
-            // Typechecker hell if you try Command::envs
-            //   This is the verbatim impl
             for (var, val) in vars.iter() {
-                cmd.env(var, val);
+                cmd.env(var.to_string(), val.to_string());
             }
         }
         
-        // Is inheriting cwd from `init` OK? Should it use the root of
-        //   the filesystem the service was parsed from?
         if let Some(cwd) = self.cwd.as_ref().or(cwd) {
-            cmd.current_dir(cwd);
+            cmd.cwd(cwd.to_string());
         }
         
-        // Same as above goes for user and group
+        // Any reason to default to `root` instead of
+        //   inheriting from init?
+        // Tbh rewrite this control flow
         if let Some(user) = self.user.as_ref().or(user) {
             let users = AllUsers::new(false)?;
             
             if let Some(user) = users.get_by_name(user) {
-                //BUG
-                cmd.uid(user.uid as u32);
+                cmd.uid(user.uid);
                 
                 // Once we know the the user exists, then we can check
                 //   for group stuff.
@@ -124,24 +125,32 @@ impl Method {
                     let groups = AllGroups::new()?;
                     
                     if let Some(group) = groups.get_by_name(group) {
-                        //BUG
-                        cmd.gid(group.gid as u32);
+                        cmd.gid(group.gid);
                     } else {
                         error!("group does not exist: {}", group);
-                        cmd.gid(user.gid as u32);
+                        cmd.gid(user.gid);
                     }
                 } else {
-                    cmd.gid(user.gid as u32);
+                    cmd.gid(user.gid);
                 }
             } else {
                 error!("user does not exist: {}", user);
             }
+        } else {
+            if let Some(group) = self.group.as_ref().or(group) {
+                error!("group provided without user, ignoring: '{}'", group);
+            }
         }
         
-        debug!("waiting on {:?}", cmd);
+        if let Some(namespace) = self.namespace.as_ref().or(namespace) {
+            cmd.ns(namespace.to_vec());
+        }
         
-        cmd.spawn()?
-            .wait()?;
+        debug!("waiting on '{}'", cmd);
+        dbg!(&cmd);
+        
+        cmd.spawn()?;
+            //.wait()?;
         Ok(())
     }
 }
@@ -178,13 +187,19 @@ pub struct Service {
     /// part of this service.
     pub vars: Option<HashMap<String, String>>,
     /// The current working directory for all methods that are
-    /// a part of this service/
-    pub cwd: Option<PathBuf>,
+    /// a part of this service. This defaults to the root of the
+    /// scheme that this service was parsed from.
+    pub cwd: Option<String>,
     
     /// Username to run all service methods as
     pub user: Option<String>,
     /// Groupname to run all service methods as
     pub group: Option<String>,
+    
+    /// The default namespace used for every method on this service.
+    /// This is a list of schemes that a process has access to over
+    /// its entire lifetime.
+    pub namespace: Option<Vec<String>>,
 }
 
 impl Service {
@@ -210,7 +225,7 @@ impl Service {
         //   that the service should be started in
         if let None = service.cwd {
             if let Some(scheme) = file_path.scheme() {
-                service.cwd = Some(scheme);
+                service.cwd = Some(scheme.to_string_lossy().to_string());
             }
         }
         Ok(service)
@@ -260,7 +275,13 @@ impl Service {
             Some(method) => {
                 info!("running method '{}' for service '{}'", method_name, self.name);
                 
-                method.wait(self.vars.as_ref(), self.cwd.as_ref(), self.user.as_ref(), self.group.as_ref())?;
+                method.wait(
+                    self.vars.as_ref(),
+                    self.cwd.as_ref(),
+                    self.user.as_ref(),
+                    self.group.as_ref(),
+                    self.namespace.as_ref(),
+                )?;
                 Ok(())
             },
             None => {
