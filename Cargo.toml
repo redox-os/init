@@ -5,15 +5,16 @@ name = "init"
 version = "0.1.0"
 
 [dependencies]
+colored = "1.7"
 failure = "0.1"
+fern = "0.5"
 generational-arena = "0.2"
+latest = "*"
 log = "0.4"
-#rayon = "1.0"
 redox_syscall = "0.1"
-redox_users = "*"
+redox_users = "0.2"
 serde = "1.0"
 serde_derive = "1.0"
-simple_logger = "1.0"
 toml = "0.4"
 
 [dependencies.chashmap]

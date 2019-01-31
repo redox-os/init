@@ -1,5 +1,6 @@
 //#![deny(warnings)]
 #![feature(dbg_macro)]
+#![feature(duration_float)]
 
 mod command;
 mod dep_graph;
@@ -12,8 +13,11 @@ use std::fs::{self, File};
 use std::io::{Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
-use log::error;
+use colored::{ColoredString, Colorize};
+use fern::Dispatch;
+use log::{error, Level, LevelFilter};
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
 use crate::service::Service;
@@ -56,9 +60,37 @@ impl PathExt for Path {
 }
 
 pub fn main() {
-    env::set_var("RUST_BACKTRACE", "1");
+    let start_time = Instant::now();
+    //env::set_var("RUST_BACKTRACE", "1");
     
-    simple_logger::init()
+    // Could use fern for this, but standard length...
+    fn color(lvl: Level) -> ColoredString {
+        match lvl {
+            Level::Error => "Error".red(),
+            Level::Warn  => "Warn ".yellow(),
+            Level::Info  => "Info ".blue(),
+            Level::Debug => "Debug".green(),
+            Level::Trace => "Trace".into()
+        }.bold()
+    }
+    
+    Dispatch::new()
+        .format(move |out, message, record| {
+            let time = Instant::now()
+                .duration_since(start_time);
+            
+            let time = format!("{:.3}", time.as_float_secs());
+            
+            out.finish(format_args!(
+                "[ {} ][ {} ] {}",
+                time.green(),
+                color(record.level()),
+                message
+            ))
+        })
+        .chain(std::io::stdout())
+        .level(LevelFilter::Trace)
+        .apply()
         .unwrap_or_else(|err| {
             println!("init: failed to start logger: {}", err);
         });

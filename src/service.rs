@@ -146,11 +146,10 @@ impl Method {
             cmd.ns(namespace.to_vec());
         }
         
-        debug!("waiting on '{}'", cmd);
-        dbg!(&cmd);
+        debug!("waiting on process '{}'", cmd);
         
-        cmd.spawn()?;
-            //.wait()?;
+        cmd.spawn()?
+            .wait()?;
         Ok(())
     }
 }

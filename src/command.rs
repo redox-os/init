@@ -10,6 +10,10 @@ use syscall::{
     error::Error as SyscallError
 };
 
+fn as_io_err(err: SyscallError) -> Error {
+    Error::from_raw_os_error(err.errno)
+}
+
 /// An alternative to `std::process::Command` for
 /// just redox, which allows for more flexibility
 /// in extending the API.
@@ -39,11 +43,6 @@ impl Command {
             gid: None,
             ns: None,
         }
-    }
-    
-    pub fn arg(&mut self, arg: String) -> &mut Command {
-        self.args.push(arg);
-        self
     }
     
     pub fn args(&mut self, mut args: Vec<String>) -> &mut Command {
@@ -81,17 +80,17 @@ impl Command {
         self
     }
     
-    pub fn spawn(&self) -> Result<()> {
-        const CLOEXEC_MSG_FOOTER: &[u8] = b"NOEX";
+    pub fn spawn(self) -> Result<Process> {
+        //const CLOEXEC_MSG_FOOTER: &[u8] = b"NOEX";
         
         let bin = File::open(&self.bin)?;
         
         // This is ust copied from the std redox impl
         let pid = unsafe {
-             match syscall::clone(0).map_err(|e| Error::from_raw_os_error(e.errno) )? {
+             match syscall::clone(0).map_err(as_io_err)? {
                  0 => {
-                     let err = self.do_exec(bin);
-                     let bytes = [
+                     let _err = self.do_exec(bin);
+                     /*let bytes = [
                          (err.errno >> 24) as u8,
                          (err.errno >> 16) as u8,
                          (err.errno >>  8) as u8,
@@ -103,18 +102,14 @@ impl Command {
                      // we want to be sure we *don't* run at_exit destructors as
                      // we're being torn down regardless
                      //assert!(output.write(&bytes).is_ok());
-                     let _ = syscall::exit(1);
+                     let _ = syscall::exit(1);*/
                      panic!("failed to exit");
                  }
                  n => n,
              }
          };
-         
-         let mut status = 0;
-         syscall::waitpid(pid, &mut status, 0)
-            .map_err(|e| Error::from_raw_os_error(e.errno) )?;
         
-        Ok(())
+        Ok(Process::new(pid))
     }
     
     /// This puppy sets env vars, user/group ids, cwd, namespaces,
@@ -122,7 +117,7 @@ impl Command {
     // Currently not parsing shebangs or $PATH for bin locations
     // Open files and things at the top here, so that it
     //   doesn't interfere with namespace setting
-    fn do_exec(&self, bin: File) -> SyscallError {
+    fn do_exec(self, bin: File) -> SyscallError {
         macro_rules! t {
             ($err:expr) => {
                 match $err {
@@ -190,4 +185,30 @@ fn raw_ns(schemes: &Vec<String>) -> Vec<[usize; 2]> {
         ptrs.push([scheme.as_ptr() as usize, scheme.len()]);
     }
     ptrs
+}
+
+pub struct Process {
+    pid: usize,
+    status: Option<usize>,
+}
+
+impl Process {
+    fn new(pid: usize) -> Process {
+        Process {
+            pid,
+            status: None
+        }
+    }
+    
+    pub fn wait(&mut self) -> Result<usize> {
+        if let Some(status) = self.status {
+            Ok(status)
+        } else {
+            let mut status = 0;
+            syscall::waitpid(self.pid, &mut status, 0)
+                .map_err(as_io_err)?;
+            self.status = Some(status);
+            Ok(status)
+        }
+    }
 }
