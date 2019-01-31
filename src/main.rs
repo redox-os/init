@@ -78,7 +78,6 @@ pub fn main() {
         .format(move |out, message, record| {
             let time = Instant::now()
                 .duration_since(start_time);
-            
             let time = format!("{:.3}", time.as_float_secs());
             
             out.finish(format_args!(
@@ -112,17 +111,19 @@ pub fn main() {
         service_graph.push_services(initfs_services);
         service_graph.start_services();
         
-        /*
+        /* Helpful to disable for debugging
         crate::switch_stdio("display:1")
             .unwrap_or_else(|err| {
                 error!("error switching stdio: {}", err);
             });
         // */
         
+        //* Needed for redox_users in order to parse the right passwd/group files
         env::set_current_dir("file:")
             .unwrap_or_else(|err| {
                 error!("failed to set cwd: {}", err);
             });
+        // */
         
         let fs_services = Service::from_dir(FS_SERVICE_DIR)
             .unwrap_or_else(|err| {

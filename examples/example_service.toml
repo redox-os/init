@@ -1,0 +1,64 @@
+# This file is generally for documenting all the configuration
+# file features in init, and will hopefully be kept reasonably
+# up to date.
+
+# List services or provides that are required in order to start
+# this service.
+dependencies = [ "foo", "bar" ]
+
+# Provides are like more generalized references to services. A
+# service can list a provided service (like `display:`) as a
+# dependency instead of the name of another service. That way,
+# no changes of a service file are required even if the provider
+# of `display:` changes.
+provides = [ "my_scheme:" ]
+
+# The username whose userid should be used to run every method
+# that is a part of this service.
+user = "skeesix"
+# The group name whose groupid should be used to run every method
+# that is a part o this service. This field is meaningless without
+# `user` being set. If `user` is set without this field, the primary
+# group of the set user will be used.
+group = "skeesix"
+
+# The namespace of a process is a list of the schemes which it is
+# allowed to access during its execution. This is a Redox kernel
+# feature, and one of the distinguishing features of Redox.
+# The root scheme (`:`) is accessible by all processes even if their
+# namespace is empty.
+# Defining this field as an empty list will create an empty namespace.
+# If the field is not included, the default is namespace 1, init's namespace,
+# which allows access to all schemes.
+namespace = [ "tcp:", "netcfg:" ]
+
+# All services require a start method. This is called by init in
+# order to start the service.
+# UNIMPLEMENTED Methods such as `stop` and `restart`
+# are automatically derived based on this method, unless explicitly
+# defined in the configuration file.
+[methods.start]
+# `cmd` is the command to run when this method is run.
+# Currently init does not support finding binaries using
+# the PATH environment variable, and also does not support
+# executing files with shebangs (#!). Write out the whole
+# path to the binary.
+cmd = [ "bin_path", "arg1", "arg2", ]
+
+# The following three fields work exactly the same way as their
+# matching fields on the service level, however, they override
+# those fields. This method will be run as the user `baz`, while
+# `baz` (below) will be run as user `skeesix`
+user = "baz"
+# An example of baz' primary group being used
+# Only `netcfg:` is required by this process
+ns = [ "netcfg:" ]
+
+# Methods of other arbitrary names can be defined in a service
+# configuration file.
+# UNIMPLEMENTED Arbitrary methods are startable using init's
+# cli utility, or by yet nonexistent fields of other methods.
+[methods.baz]
+cmd = [ "file:/bin/echo", "What does", "baz do?" ]
+
+# `baz` takes the service defaults for user/group/namespace
