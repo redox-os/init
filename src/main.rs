@@ -5,25 +5,25 @@ extern crate syscall;
 use std::env;
 use std::fs::{File, read_dir};
 use std::io::{Read, Error, Result};
-use std::os::unix::io::{AsRawFd, FromRawFd};
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
 use std::process::Command;
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
-        syscall::open(stdio, O_RDONLY).map_err(|err| Error::from_raw_os_error(err.errno))?
+        syscall::open(stdio, O_RDONLY).map_err(|err| Error::from_raw_os_error(err.errno))? as RawFd
     ) };
     let stdout = unsafe { File::from_raw_fd(
-        syscall::open(stdio, O_WRONLY).map_err(|err| Error::from_raw_os_error(err.errno))?
+        syscall::open(stdio, O_WRONLY).map_err(|err| Error::from_raw_os_error(err.errno))? as RawFd
     ) };
     let stderr = unsafe { File::from_raw_fd(
-        syscall::open(stdio, O_WRONLY).map_err(|err| Error::from_raw_os_error(err.errno))?
+        syscall::open(stdio, O_WRONLY).map_err(|err| Error::from_raw_os_error(err.errno))? as RawFd
     ) };
 
-    syscall::dup2(stdin.as_raw_fd(), 0, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
-    syscall::dup2(stdout.as_raw_fd(), 1, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
-    syscall::dup2(stderr.as_raw_fd(), 2, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
+    syscall::dup2(stdin.as_raw_fd() as usize, 0, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
+    syscall::dup2(stdout.as_raw_fd() as usize, 1, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
+    syscall::dup2(stderr.as_raw_fd() as usize, 2, &[]).map_err(|err| Error::from_raw_os_error(err.errno))?;
 
     Ok(())
 }
