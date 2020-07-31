@@ -2,12 +2,12 @@
 
 extern crate syscall;
 
-use std::env;
 use std::fs::{File, read_dir};
 use std::io::{Read, Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
-use std::process::Command;
+use std::{env, process};
+
 use syscall::flag::{O_RDONLY, O_WRONLY};
 
 fn switch_stdio(stdio: &str) -> Result<()> {
@@ -28,11 +28,15 @@ fn switch_stdio(stdio: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn run(file: &Path) -> Result<()> {
+pub struct Context {
+    children: Vec<process::Child>,
+}
+
+pub fn run(file: &Path, context: &mut Context) -> Result<()> {
     let mut data = String::new();
     File::open(file)?.read_to_string(&mut data)?;
 
-    for line in data.lines() {
+    'lines: for line in data.lines() {
         let line = line.trim();
         if ! line.is_empty() && ! line.starts_with('#') {
             let mut args = line.split(' ').map(|arg| if arg.starts_with('$') {
@@ -73,13 +77,14 @@ pub fn run(file: &Path) -> Result<()> {
                         println!("init: failed to export: no argument");
                     },
                     "run" => if let Some(new_file) = args.next() {
-                        if let Err(err) = run(&Path::new(&new_file)) {
+                        if let Err(err) = run(&Path::new(&new_file), context) {
                             println!("init: failed to run '{}': {}", new_file, err);
                         }
                     } else {
                         println!("init: failed to run: no argument");
                     },
                     "run.d" => if let Some(new_dir) = args.next() {
+                        println!("init: doing run.d on dir {}", new_dir);
                         let mut entries = vec![];
                         match read_dir(&new_dir) {
                             Ok(list) => for entry_res in list {
@@ -100,7 +105,7 @@ pub fn run(file: &Path) -> Result<()> {
                         entries.sort();
 
                         for entry in entries {
-                            if let Err(err) = run(&entry) {
+                            if let Err(err) = run(&entry, context) {
                                 println!("init: failed to run '{}': {}", entry.display(), err);
                             }
                         }
@@ -114,15 +119,34 @@ pub fn run(file: &Path) -> Result<()> {
                     } else {
                         println!("init: failed to set stdio: no argument");
                     },
-                    _ => {
-                        let mut command = Command::new(cmd);
-                        for arg in args {
-                            command.arg(arg);
+                    "%NOFORK" => {
+                        let cmd = match args.next() {
+                            Some(arg) => arg,
+                            None => {
+                                println!("init: expected command after %NOFORK prefix");
+                                continue 'lines;
+                            }
+                        };
+                        // TODO: Use io_uring asynchronous waitpid.
+
+                        let line = line.to_owned();
+
+                        let mut command = process::Command::new(cmd);
+                        command.args(args);
+
+                        println!("init: starting secondary thread");
+                        match command.spawn() {
+                            Ok(child) => context.children.push(child),
+                            Err(err) => println!("init: failed to asynchronously execute '{}': {}", line, err),
                         }
+                    }
+                    _ => {
+                        let mut command = process::Command::new(cmd);
+                        command.args(args);
 
                         match command.spawn() {
                             Ok(mut child) => match child.wait() {
-                                Ok(_status) => (), //println!("init: waited for {}: {:?}", line, status.code()),
+                                Ok(status) => println!("init: waited for {}: {}", line, status),
                                 Err(err) => println!("init: failed to wait for '{}': {}", line, err)
                             },
                             Err(err) => println!("init: failed to execute '{}': {}", line, err)
@@ -137,7 +161,11 @@ pub fn run(file: &Path) -> Result<()> {
 }
 
 pub fn main() {
-    if let Err(err) = run(&Path::new("initfs:etc/init.rc")) {
+    let mut context = Context {
+        children: Vec::new(),
+    };
+
+    if let Err(err) = run(&Path::new("initfs:etc/init.rc"), &mut context) {
         println!("init: failed to run initfs:etc/init.rc: {}", err);
     }
 
@@ -145,6 +173,22 @@ pub fn main() {
 
     loop {
         let mut status = 0;
-        syscall::waitpid(0, &mut status, 0).unwrap();
+        match syscall::waitpid(0, &mut status, 0) {
+            Ok(_) => (),
+            Err(err) => {
+                println!("init: error when waiting: {}", err);
+                break;
+            },
+        }
     }
+
+    println!("init: starting to wait for remaining asynchronous commands to complete");
+    for mut child in context.children {
+        println!("init: waiting for spawned child: {:?}", child);
+        match child.wait() {
+            Ok(status) => println!("init: waited for spawned child {:?}, status: {}", child, status),
+            Err(err) => println!("init: failed to asynchronously wait for {:?}: {}", child, err),
+        }
+    }
+    println!("init: waited");
 }
