@@ -9,6 +9,7 @@ use std::path::Path;
 use std::{env, process};
 
 use syscall::flag::{O_RDONLY, O_WRONLY};
+use syscall::flag::WaitFlags;
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -173,7 +174,7 @@ pub fn main() {
 
     loop {
         let mut status = 0;
-        match syscall::waitpid(0, &mut status, 0) {
+        match syscall::waitpid(0, &mut status, WaitFlags::empty()) {
             Ok(_) => (),
             Err(err) => {
                 println!("init: error when waiting: {}", err);
