@@ -8,7 +8,7 @@ use std::io::{Read, Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
 use std::process::Command;
-use syscall::flag::{O_RDONLY, O_WRONLY};
+use syscall::flag::{WaitFlags, O_RDONLY, O_WRONLY};
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = unsafe { File::from_raw_fd(
@@ -145,6 +145,6 @@ pub fn main() {
 
     loop {
         let mut status = 0;
-        syscall::waitpid(0, &mut status, 0).unwrap();
+        syscall::waitpid(0, &mut status, WaitFlags::empty()).unwrap();
     }
 }
