@@ -1,10 +1,8 @@
-#![deny(warnings)]
-
 extern crate syscall;
 
 use std::env;
 use std::fs::{File, read_dir};
-use std::io::{Read, Error, Result};
+use std::io::{BufReader, BufRead, Error, Result};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
 use std::process::Command;
@@ -29,11 +27,11 @@ fn switch_stdio(stdio: &str) -> Result<()> {
 }
 
 pub fn run(file: &Path) -> Result<()> {
-    let mut data = String::new();
-    File::open(file)?.read_to_string(&mut data)?;
-
-    for line in data.lines() {
-        let line = line.trim();
+    let file = File::open(file)?;
+    let reader = BufReader::new(file);
+    for line_res in reader.lines() {
+        let line_raw = line_res?;
+        let line = line_raw.trim();
         if ! line.is_empty() && ! line.starts_with('#') {
             let mut args = line.split(' ').map(|arg| if arg.starts_with('$') {
                 env::var(&arg[1..]).unwrap_or(String::new())
