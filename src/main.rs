@@ -78,35 +78,7 @@ pub fn run(file: &Path) -> Result<()> {
                         println!("init: failed to run: no argument");
                     },
                     "run.d" => if let Some(new_dir) = args.next() {
-                        // On startup, the VESA display driver is started which basically makes use of the framebuffer
-                        // provided by the firmware. The GPU device are latter started by `pcid` (such as `virtio-gpu`).
-                        let mut devices = vec![];
-                        let schemes = std::fs::read_dir(":").unwrap();
-                    
-                        for entry in schemes {
-                            let path = entry.unwrap().path();
-                            let path_str = path
-                                .into_os_string()
-                                .into_string()
-                                .expect("init: failed to convert path to string");
-                    
-                            if path_str.contains("display") {
-                                println!("init: found display scheme {}", path_str);
-                                devices.push(path_str);
-                            }
-                        }
-                    
-                        let device = devices.iter().filter(|d| !d.contains("vesa")).collect::<Vec<_>>();
-                        let device = if device.is_empty() {
-                            // No GPU available, fallback to VESA display which *should* always be accessible.
-                           "vesa"
-                        } else {
-                            // :/display/virtio-gpu
-                            //           ^^^^^^^^^^
-                            device[0].split("/").nth(2).unwrap()
-                        };
-
-                        std::env::set_var("DISPLAY", &format!("display/{}:3/activate", device));
+                        std::env::set_var("DISPLAY", "3");
 
                         let mut entries = vec![];
                         match read_dir(&new_dir) {
