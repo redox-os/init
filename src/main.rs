@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::fs::{read_dir, File};
 use std::io::{BufRead, BufReader, Error, Result};
@@ -87,16 +88,26 @@ pub fn run(file: &Path) -> Result<()> {
                         }
                     }
                     "run.d" => {
-                        if let Some(new_dir) = args.next() {
-                            std::env::set_var("DISPLAY", "3");
+                        // This must be a BTreeMap to iterate in sorted order.
+                        let mut entries = BTreeMap::new();
+                        let mut missing_arg = true;
 
-                            let mut entries = vec![];
+                        for new_dir in args {
+                            if !Path::new(&new_dir).exists() {
+                                // Skip non-existent dirs
+                                continue;
+                            }
+                            missing_arg = false;
+
                             match read_dir(&new_dir) {
                                 Ok(list) => {
                                     for entry_res in list {
                                         match entry_res {
                                             Ok(entry) => {
-                                                entries.push(entry.path());
+                                                // This intentionally overwrites older entries with
+                                                // the same filename to allow overriding entries in
+                                                // one search dir with those in a later search dir.
+                                                entries.insert(entry.file_name(), entry.path());
                                             }
                                             Err(err) => {
                                                 println!(
@@ -111,16 +122,22 @@ pub fn run(file: &Path) -> Result<()> {
                                     println!("init: failed to run.d: '{}': {}", new_dir, err);
                                 }
                             }
+                        }
 
-                            entries.sort();
-
-                            for entry in entries {
-                                if let Err(err) = run(&entry) {
-                                    println!("init: failed to run '{}': {}", entry.display(), err);
+                        if missing_arg {
+                            println!("init: failed to run.d: no argument or all dirs are non-existent");
+                        } else {
+                            std::env::set_var("DISPLAY", "3");
+                            // This takes advantage of BTreeMap iterating in sorted order.
+                            for (_, entry_path) in entries {
+                                if let Err(err) = run(&entry_path) {
+                                    println!(
+                                        "init: failed to run '{}': {}",
+                                        entry_path.display(),
+                                        err
+                                    );
                                 }
                             }
-                        } else {
-                            println!("init: failed to run.d: no argument");
                         }
                     }
                     "stdio" => {
