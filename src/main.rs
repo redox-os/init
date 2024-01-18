@@ -149,6 +149,11 @@ pub fn run(file: &Path) -> Result<()> {
                             println!("init: failed to set stdio: no argument");
                         }
                     }
+                    "unset" => {
+                        for arg in args {
+                            env::remove_var(&arg);
+                        }
+                    }
                     _ => {
                         let mut command = Command::new(cmd);
                         for arg in args {
@@ -174,8 +179,9 @@ pub fn run(file: &Path) -> Result<()> {
 }
 
 pub fn main() {
-    if let Err(err) = run(&Path::new("initfs:etc/init.rc")) {
-        println!("init: failed to run initfs:etc/init.rc: {}", err);
+    let config = "/scheme/initfs/etc/init.rc";
+    if let Err(err) = run(&Path::new(config)) {
+        println!("init: failed to run {}: {}", config, err);
     }
 
     libredox::call::setrens(0, 0).expect("init: failed to enter null namespace");
