@@ -127,7 +127,6 @@ pub fn run(file: &Path) -> Result<()> {
                         if missing_arg {
                             println!("init: failed to run.d: no argument or all dirs are non-existent");
                         } else {
-                            std::env::set_var("DISPLAY", "3");
                             // This takes advantage of BTreeMap iterating in sorted order.
                             for (_, entry_path) in entries {
                                 if let Err(err) = run(&entry_path) {
