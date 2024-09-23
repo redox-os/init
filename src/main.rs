@@ -1,11 +1,32 @@
 use std::collections::BTreeMap;
 use std::env;
+use std::ffi::CString;
 use std::fs::{read_dir, File};
-use std::io::{BufRead, BufReader, Error, Result};
+use std::io::{BufRead, BufReader, Error, Result, Write};
 use std::path::Path;
 use std::process::Command;
 
+use libredox::error::Error as OsError;
+
 use libredox::flag::{O_RDONLY, O_WRONLY};
+
+fn set_default_scheme(scheme: &str) -> std::result::Result<(), OsError> {
+    use std::ffi::{c_char, c_int};
+
+    extern "C" {
+        fn set_default_scheme(scheme: *const c_char) -> c_int;
+    }
+
+    let cstr =
+        CString::new(scheme.as_bytes()).expect(&format!("init: invalid default scheme {}", scheme));
+
+    let res = unsafe { set_default_scheme(cstr.as_ptr()) };
+
+    match res {
+        0 => Ok(()),
+        error_code => Err(OsError::new(error_code)),
+    }
+}
 
 fn switch_stdio(stdio: &str) -> Result<()> {
     let stdin = libredox::Fd::open(stdio, O_RDONLY, 0)
@@ -52,6 +73,18 @@ pub fn run(file: &Path) -> Result<()> {
                             }
                         } else {
                             println!("init: failed to cd: no argument");
+                        }
+                    }
+                    "set-default-scheme" => {
+                        if let Some(scheme) = args.next() {
+                            if let Err(err) = set_default_scheme(&scheme) {
+                                println!(
+                                    "init: failed to set default scheme to '{}': {}",
+                                    scheme, err
+                                );
+                            }
+                        } else {
+                            println!("init: failed to set default scheme: no argument");
                         }
                     }
                     "echo" => {
@@ -125,7 +158,9 @@ pub fn run(file: &Path) -> Result<()> {
                         }
 
                         if missing_arg {
-                            println!("init: failed to run.d: no argument or all dirs are non-existent");
+                            println!(
+                                "init: failed to run.d: no argument or all dirs are non-existent"
+                            );
                         } else {
                             // This takes advantage of BTreeMap iterating in sorted order.
                             for (_, entry_path) in entries {
@@ -154,14 +189,22 @@ pub fn run(file: &Path) -> Result<()> {
                         }
                     }
                     _ => {
-                        let mut command = Command::new(cmd);
+                        let mut command = Command::new(cmd.clone());
                         for arg in args {
                             command.arg(arg);
                         }
 
                         match command.spawn() {
-                            Ok(mut child) => match child.wait() {
-                                Ok(_status) => (), //println!("init: waited for {}: {:?}", line, status.code()),
+                            Ok(child) => match child.wait_with_output() {
+                                Ok(output) => {
+                                    std::io::stdout()
+                                        .write_all(output.stdout.as_slice())
+                                        .unwrap();
+                                    std::io::stderr()
+                                        .write_all(output.stderr.as_slice())
+                                        .unwrap();
+                                    println!("{cmd} done.");
+                                }
                                 Err(err) => {
                                     println!("init: failed to wait for '{}': {}", line, err)
                                 }
@@ -178,7 +221,11 @@ pub fn run(file: &Path) -> Result<()> {
 }
 
 pub fn main() {
-    let config = "/scheme/initfs/etc/init.rc";
+    if let Err(err) = set_default_scheme("initfs") {
+        println!("init: failed to set default scheme: {}", err);
+    }
+
+    let config = "/etc/init.rc";
     if let Err(err) = run(&Path::new(config)) {
         println!("init: failed to run {}: {}", config, err);
     }
