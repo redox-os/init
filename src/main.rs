@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::CString;
 use std::fs::{read_dir, File};
-use std::io::{BufRead, BufReader, Error, Result, Write};
+use std::io::{BufRead, BufReader, Result, Write};
 use std::path::Path;
 use std::process::Command;
 
@@ -29,22 +29,13 @@ fn set_default_scheme(scheme: &str) -> std::result::Result<(), OsError> {
 }
 
 fn switch_stdio(stdio: &str) -> Result<()> {
-    let stdin = libredox::Fd::open(stdio, O_RDONLY, 0)
-        .map_err(|err| Error::from_raw_os_error(err.errno))?;
-    let stdout = libredox::Fd::open(stdio, O_WRONLY, 0)
-        .map_err(|err| Error::from_raw_os_error(err.errno))?;
-    let stderr = libredox::Fd::open(stdio, O_WRONLY, 0)
-        .map_err(|err| Error::from_raw_os_error(err.errno))?;
+    let stdin = libredox::Fd::open(stdio, O_RDONLY, 0)?;
+    let stdout = libredox::Fd::open(stdio, O_WRONLY, 0)?;
+    let stderr = libredox::Fd::open(stdio, O_WRONLY, 0)?;
 
-    stdin
-        .dup2(0, &[])
-        .map_err(|err| Error::from_raw_os_error(err.errno))?;
-    stdout
-        .dup2(1, &[])
-        .map_err(|err| Error::from_raw_os_error(err.errno))?;
-    stderr
-        .dup2(2, &[])
-        .map_err(|err| Error::from_raw_os_error(err.errno))?;
+    stdin.dup2(0, &[])?;
+    stdout.dup2(1, &[])?;
+    stderr.dup2(2, &[])?;
 
     Ok(())
 }
