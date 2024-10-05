@@ -5,4 +5,4 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-libredox = "0.0.2"
+libredox = "0.1"
